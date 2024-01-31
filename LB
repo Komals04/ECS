@@ -1,0 +1,63 @@
+import boto3
+import csv
+from datetime import datetime, timedelta
+
+# Initialize Boto3 clients for ECS and CloudWatch
+ecs_client = boto3.client('ecs')
+cloudwatch_client = boto3.client('cloudwatch')
+
+# Function to get average incoming requests for an ECS service
+def get_avg_incoming_requests(cluster_name, service_name):
+    metric_name = 'RequestCountPerTarget'
+    namespace = 'AWS/ECS'
+    start_time = datetime.utcnow() - timedelta(hours=1)  # Adjust the time window as needed
+
+    # Get the ECS service's metrics
+    response = cloudwatch_client.get_metric_statistics(
+        Namespace=namespace,
+        MetricName=metric_name,
+        Dimensions=[{'Name': 'ServiceName', 'Value': service_name},
+                    {'Name': 'ClusterName', 'Value': cluster_name}],
+        StartTime=start_time,
+        EndTime=datetime.utcnow(),
+        Period=300,
+        Statistics=['Average']
+    )
+
+    # Extract and return the average value
+    datapoints = response.get('Datapoints', [])
+    if datapoints:
+        return datapoints[-1].get('Average')
+    return None
+
+# Get a list of ECS clusters in the account
+response = ecs_client.list_clusters()
+cluster_arns = response.get('clusterArns', [])
+
+# Prepare CSV file
+csv_file_path = 'ecs_load_balancer_metrics.csv'
+csv_header = ['ClusterName', 'ServiceName', 'AvgIncomingRequests']
+
+with open(csv_file_path, 'w', newline='') as csv_file:
+    csv_writer = csv.writer(csv_file)
+    csv_writer.writerow(csv_header)
+
+    # Loop through each ECS cluster
+    for cluster_arn in cluster_arns:
+        cluster_name = cluster_arn.split('/')[-1]
+
+        # Get ECS services for the cluster
+        services_response = ecs_client.list_services(cluster=cluster_name)
+        service_arns = services_response.get('serviceArns', [])
+
+        # Loop through each ECS service
+        for service_arn in service_arns:
+            service_name = service_arn.split('/')[-1]
+
+            # Get average incoming requests for the service
+            avg_requests = get_avg_incoming_requests(cluster_name, service_name)
+
+            # Write information to CSV
+            csv_writer.writerow([cluster_name, service_name, avg_requests])
+
+print(f'ECS load balancer metrics have been saved to {csv_file_path}.')
