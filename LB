@@ -9,6 +9,30 @@ aws_region = 'us-east-1'
 ecs_client = boto3.client('ecs', region_name=aws_region)
 cloudwatch_client = boto3.client('cloudwatch', region_name=aws_region)
 
+# Function to get ECS services and associated load balancer
+def get_ecs_services(cluster_name):
+    response = ecs_client.list_services(cluster=cluster_name)
+    service_arns = response.get('serviceArns', [])
+
+    services = []
+    for service_arn in service_arns:
+        service_name = service_arn.split('/')[-1]
+
+        # Get ECS service details
+        service_details = ecs_client.describe_services(cluster=cluster_name, services=[service_name])
+        service = service_details['services'][0]
+
+        # Extract load balancer information
+        load_balancers = service.get('loadBalancers', [])
+        load_balancer_names = [lb['loadBalancerName'] for lb in load_balancers]
+
+        services.append({
+            'ServiceName': service_name,
+            'LoadBalancers': load_balancer_names
+        })
+
+    return services
+
 # Function to get average incoming requests for an ECS service
 def get_avg_incoming_requests(cluster_name, service_name):
     metric_name = 'RequestCountPerTarget'
@@ -39,7 +63,7 @@ cluster_arns = response.get('clusterArns', [])
 
 # Prepare CSV file
 csv_file_path = 'ecs_load_balancer_metrics.csv'
-csv_header = ['ClusterName', 'ServiceName', 'AvgIncomingRequests']
+csv_header = ['ClusterName', 'ServiceName', 'LoadBalancers', 'AvgIncomingRequests']
 
 with open(csv_file_path, 'w', newline='') as csv_file:
     csv_writer = csv.writer(csv_file)
@@ -49,18 +73,18 @@ with open(csv_file_path, 'w', newline='') as csv_file:
     for cluster_arn in cluster_arns:
         cluster_name = cluster_arn.split('/')[-1]
 
-        # Get ECS services for the cluster
-        services_response = ecs_client.list_services(cluster=cluster_name)
-        service_arns = services_response.get('serviceArns', [])
+        # Get ECS services and associated load balancers for the cluster
+        ecs_services = get_ecs_services(cluster_name)
 
         # Loop through each ECS service
-        for service_arn in service_arns:
-            service_name = service_arn.split('/')[-1]
+        for ecs_service in ecs_services:
+            service_name = ecs_service['ServiceName']
+            load_balancers = ', '.join(ecs_service['LoadBalancers'])
 
             # Get average incoming requests for the service
             avg_requests = get_avg_incoming_requests(cluster_name, service_name)
 
             # Write information to CSV
-            csv_writer.writerow([cluster_name, service_name, avg_requests])
+            csv_writer.writerow([cluster_name, service_name, load_balancers, avg_requests])
 
 print(f'ECS load balancer metrics have been saved to {csv_file_path}.')
