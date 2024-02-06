@@ -1,0 +1,57 @@
+ecs.ecs-insights-batch
+ECS Insights is a long running batch application that puts Cloudwatch metrics into a dyanmo table.
+
+These metrics are Average, Min, and Max Task Count, and vCPU / Memory usage.
+
+This runs 24/7 quering the Ecs Insights SQS Queue for new messages, these messages contain Vanguard AWS account information.
+
+The messages are in the following format
+
+{
+    'AWS_Account_Name': 'vgi-retail-eng',
+    'AWS_Account_Number': '000999111000',
+    'AWS_Region': 'us-west-2',
+    'Clusters': [
+        'arn:aws:ecs:region:012345678910:cluster/test1',
+        'arn:aws:ecs:region:012345678910:cluster/test2',
+        'arn:aws:ecs:region:012345678910:cluster/test3'
+    ]
+}
+Local Development
+I'd recommend using a virtual environment for developement and testing, lets create one.
+
+python -m venv venv_dev
+Activate virtual environment
+
+# Mac OS
+source ./venv_dev/bin/activate
+# Windows
+.\venv_dev\Scripts\activate
+Install dependencies.
+
+pip install -r src/requirements.txt
+pip install -r requirements.dev.txt
+If you would like to test locally, you will need to do the following.
+
+Put a test message in the queue in engineering.
+Log into the AWS console for the account vgi-ops-int and region of us-east-1
+Go to the SQS service, and look for the queue EcsInsightsQueue
+Set the proper environment variables
+Set you AWS credentials in your users home directory ~/.aws/credentials I recommend using dexter for this
+Run the script locally
+Setting the environement variables
+
+# mac os
+export SQSQueueName="EcsInsightsQueue"
+export Region="us-east-1"
+export DynamoTableName="ecs-insights-master"
+# windows
+set SQSQueueName="EcsInsightsQueue"
+set Region="us-east-1"
+set DynamoTableName="ecs-insights-master"
+Set your aws crentials using dexter
+
+dexter creds
+Run the script
+
+python src/ecs_insights.py
