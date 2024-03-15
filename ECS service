@@ -1,0 +1,145 @@
+import boto3
+import csv
+from datetime import datetime
+
+def describe_capacity_providers(ecs_client):
+    response = ecs_client.describe_capacity_providers()
+    return response['capacityProviders']
+
+def describe_clusters(ecs_client):
+    response = ecs_client.describe_clusters()
+    return response['clusters']
+
+def describe_container_instances(ecs_client, cluster):
+    response = ecs_client.describe_container_instances(cluster=cluster)
+    return response['containerInstances']
+
+def describe_services(ecs_client, cluster):
+    response = ecs_client.describe_services(cluster=cluster)
+    return response['services']
+
+def describe_task_definition(ecs_client, task_definition):
+    response = ecs_client.describe_task_definition(taskDefinition=task_definition)
+    return response['taskDefinition']
+
+def describe_task_sets(ecs_client, cluster, service):
+    response = ecs_client.describe_task_sets(cluster=cluster, service=service)
+    return response['taskSets']
+
+def describe_tasks(ecs_client, cluster):
+    response = ecs_client.describe_tasks(cluster=cluster)
+    return response['tasks']
+
+def list_account_settings(ecs_client):
+    response = ecs_client.list_account_settings()
+    return response['settings']
+
+def list_attributes(ecs_client):
+    response = ecs_client.list_attributes()
+    return response['attributes']
+
+def list_clusters(ecs_client):
+    response = ecs_client.list_clusters()
+    return response['clusterArns']
+
+def list_container_instances(ecs_client, cluster):
+    response = ecs_client.list_container_instances(cluster=cluster)
+    return response['containerInstanceArns']
+
+def list_services(ecs_client, cluster):
+    response = ecs_client.list_services(cluster=cluster)
+    return response['serviceArns']
+
+def list_services_by_namespace(ecs_client, namespace):
+    response = ecs_client.list_services_by_namespace(namespace=namespace)
+    return response['serviceArns']
+
+def list_tags_for_resource(ecs_client, resource_arn):
+    response = ecs_client.list_tags_for_resource(resourceArn=resource_arn)
+    return response['tags']
+
+def list_task_definition_families(ecs_client):
+    response = ecs_client.list_task_definition_families()
+    return response['families']
+
+def list_task_definitions(ecs_client, family_prefix=None):
+    response = ecs_client.list_task_definitions(familyPrefix=family_prefix)
+    return response['taskDefinitionArns']
+
+def list_tasks(ecs_client, cluster):
+    response = ecs_client.list_tasks(cluster=cluster)
+    return response['taskArns']
+
+def write_to_csv(filename, data):
+    fieldnames = list(data[0].keys())
+    with open(filename, 'w', newline='') as csvfile:
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+        writer.writeheader()
+        for row in data:
+            writer.writerow(row)
+
+def main():
+    ecs_client = boto3.client('ecs')
+
+    # Fetch ECS insights
+    clusters = describe_clusters(ecs_client)
+    container_instances = describe_container_instances(ecs_client, clusters[0]['clusterName'])
+    services = describe_services(ecs_client, clusters[0]['clusterName'])
+    task_definitions = list_task_definitions(ecs_client)
+    tasks = describe_tasks(ecs_client, clusters[0]['clusterName'])
+
+    # Prepare data for CSV
+    ecs_insights = []
+    for cluster in clusters:
+        cluster_insight = {
+            'ClusterName': cluster['clusterName'],
+            'Status': cluster['status'],
+            'RegisteredContainerInstancesCount': cluster['registeredContainerInstancesCount'],
+            'RunningTasksCount': cluster['runningTasksCount'],
+            'PendingTasksCount': cluster['pendingTasksCount'],
+        }
+        ecs_insights.append(cluster_insight)
+
+    for instance in container_instances:
+        instance_insight = {
+            'ContainerInstanceArn': instance['containerInstanceArn'],
+            'Status': instance['status'],
+            'RunningTasksCount': instance['runningTasksCount'],
+        }
+        ecs_insights.append(instance_insight)
+
+    for service in services:
+        service_insight = {
+            'ServiceName': service['serviceName'],
+            'Status': service['status'],
+            'RunningCount': service['runningCount'],
+            'PendingCount': service['pendingCount'],
+        }
+        ecs_insights.append(service_insight)
+
+    for task_definition_arn in task_definitions:
+        task_definition = describe_task_definition(ecs_client, task_definition_arn)
+        task_definition_insight = {
+            'TaskDefinitionArn': task_definition['taskDefinitionArn'],
+            'Family': task_definition['family'],
+            'Status': task_definition['status'],
+        }
+        ecs_insights.append(task_definition_insight)
+
+    for task in tasks:
+        task_insight = {
+            'TaskArn': task['taskArn'],
+            'Family': task['taskDefinitionArn'].split('/')[-1],
+            'ClusterName': clusters[0]['clusterName'],
+            'Status': task['lastStatus'],
+        }
+        ecs_insights.append(task_insight)
+
+    # Write ECS insights to CSV
+    timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+    filename = f'ecs_insights_{timestamp}.csv'
+    write_to_csv(filename, ecs_insights)
+    print(f'ECS insights exported to {filename}')
+
+if __name__ == "__main__":
+    main()
