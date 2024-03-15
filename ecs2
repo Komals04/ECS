@@ -1,137 +1,99 @@
 import boto3
 import csv
 from datetime import datetime
+from botocore.exceptions import ClientError
 
 def describe_capacity_providers(ecs_client):
-    response = ecs_client.describe_capacity_providers()
-    return response['capacityProviders']
+    try:
+        response = ecs_client.describe_capacity_providers()
+        capacity_providers = response.get('capacityProviders', [])
+        return capacity_providers
+    except Exception as e:
+        print(f"Error occurred while describing capacity providers: {e}")
+        return []
 
 def describe_clusters(ecs_client):
-    response = ecs_client.describe_clusters()
-    return response['clusters']
+    try:
+        response = ecs_client.describe_clusters()
+        clusters = response.get('clusters', [])
+        return clusters
+    except Exception as e:
+        print(f"Error occurred while describing clusters: {e}")
+        return []
 
-def describe_container_instances(ecs_client, cluster_name):
-    response = ecs_client.describe_container_instances(cluster=cluster_name)
-    return response['containerInstances']
+def describe_container_instances(ecs_client):
+    try:
+        response = ecs_client.describe_container_instances()
+        container_instances = response.get('containerInstances', [])
+        return container_instances
+    except Exception as e:
+        print(f"Error occurred while describing container instances: {e}")
+        return []
 
-def describe_services(ecs_client, cluster_name):
-    response = ecs_client.describe_services(cluster=cluster_name)
-    return response['services']
+def describe_services(ecs_client):
+    try:
+        response = ecs_client.describe_services()
+        services = response.get('services', [])
+        return services
+    except Exception as e:
+        print(f"Error occurred while describing services: {e}")
+        return []
 
-def describe_task_definition(ecs_client, task_definition_arn):
-    response = ecs_client.describe_task_definition(taskDefinition=task_definition_arn)
-    return response['taskDefinition']
+def describe_task_definition(ecs_client):
+    try:
+        response = ecs_client.describe_task_definition()
+        task_definitions = response.get('taskDefinitions', [])
+        return task_definitions
+    except Exception as e:
+        print(f"Error occurred while describing task definitions: {e}")
+        return []
 
-def describe_task_sets(ecs_client, cluster_name, service_name):
-    response = ecs_client.describe_task_sets(cluster=cluster_name, service=service_name)
-    return response['taskSets']
+def describe_task_sets(ecs_client):
+    try:
+        response = ecs_client.describe_task_sets()
+        task_sets = response.get('taskSets', [])
+        return task_sets
+    except Exception as e:
+        print(f"Error occurred while describing task sets: {e}")
+        return []
 
-def describe_tasks(ecs_client, cluster_name):
-    response = ecs_client.list_tasks(cluster=cluster_name)
-    task_arns = response['taskArns']
-    tasks = []
-    for task_arn in task_arns:
-        task = ecs_client.describe_tasks(cluster=cluster_name, tasks=[task_arn])['tasks'][0]
-        tasks.append(task)
-    return tasks
-
-def list_account_settings(ecs_client):
-    response = ecs_client.list_account_settings()
-    return response['settings']
-
-def list_attributes(ecs_client, target_type, target_id):
-    response = ecs_client.list_attributes(targetType=target_type, targetId=target_id)
-    return response['attributes']
-
-def list_clusters(ecs_client):
-    response = ecs_client.list_clusters()
-    return response['clusterArns']
-
-def list_container_instances(ecs_client, cluster_name):
-    response = ecs_client.list_container_instances(cluster=cluster_name)
-    return response['containerInstanceArns']
-
-def list_services(ecs_client, cluster_name):
-    response = ecs_client.list_services(cluster=cluster_name)
-    return response['serviceArns']
-
-def list_services_by_namespace(ecs_client, cluster_name, service_namespace):
-    response = ecs_client.list_services(cluster=cluster_name, launchType='FARGATE', schedulingStrategy='REPLICA', serviceName=service_namespace)
-    return response['serviceArns']
-
-def list_tags_for_resource(ecs_client, resource_arn):
-    response = ecs_client.list_tags_for_resource(resourceArn=resource_arn)
-    return response['tags']
-
-def list_task_definition_families(ecs_client, family_prefix):
-    response = ecs_client.list_task_definition_families(familyPrefix=family_prefix)
-    return response['families']
-
-def list_task_definitions(ecs_client, family_prefix):
-    response = ecs_client.list_task_definitions(familyPrefix=family_prefix)
-    return response['taskDefinitionArns']
-
-def list_tasks(ecs_client, cluster_name):
-    response = ecs_client.list_tasks(cluster=cluster_name)
-    return response['taskArns']
-
-def flatten_tags(tag_list):
-    return [{'Key': tag['key'], 'Value': tag['value']} for tag in tag_list]
-
-def flatten_nested_attributes(items):
-    return [
-        {f"{k}_{sub_k}": sub_v for sub_k, sub_v in item.items()}
-        for k, v in items[0].items()
-        for item in items
-    ] if items else []
+def describe_tasks(ecs_client):
+    try:
+        response = ecs_client.describe_tasks()
+        tasks = response.get('tasks', [])
+        return tasks
+    except Exception as e:
+        print(f"Error occurred while describing tasks: {e}")
+        return []
 
 def main():
     try:
-        regions = ['us-east-1', 'us-east-2']  # Hardcoded regions
-
+        regions = ['us-east-1', 'us-east-2']  # Add your desired regions here
         timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
-        filename = f'ecs_insights_{timestamp}.csv'  # CSV file for ECS
 
-        fieldnames = [
-            'ResourceType', 'ResourceName', 'Details',
-        ]
+        for region in regions:
+            ecs_client = boto3.client('ecs', region_name=region)
 
-        with open(filename, 'w', newline='') as csvfile:
-            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-            writer.writeheader()
+            # Describe ECS resources
+            capacity_providers = describe_capacity_providers(ecs_client)
+            clusters = describe_clusters(ecs_client)
+            container_instances = describe_container_instances(ecs_client)
+            services = describe_services(ecs_client)
+            task_definitions = describe_task_definition(ecs_client)
+            task_sets = describe_task_sets(ecs_client)
+            tasks = describe_tasks(ecs_client)
 
-            for region in regions:
-                ecs_client = boto3.client('ecs', region_name=region)
+            # Write data to CSV files
+            with open(f'ecs_insights_{region}_{timestamp}.csv', 'w', newline='') as csvfile:
+                writer = csv.writer(csvfile)
+                writer.writerow(['ResourceType', 'ResourceData'])
 
-                capacity_providers = describe_capacity_providers(ecs_client)
-                clusters = describe_clusters(ecs_client)
+                for resource_data in [capacity_providers, clusters, container_instances, services, task_definitions, task_sets, tasks]:
+                    for resource in resource_data:
+                        writer.writerow([type(resource).__name__, resource])
 
-                for cp in capacity_providers:
-                    writer.writerow({'ResourceType': 'CapacityProvider', 'ResourceName': cp['capacityProviderName'], 'Details': str(cp)})
+            print(f"Completed exporting ECS insights for region {region}")
 
-                for cluster in clusters:
-                    cluster_name = cluster['clusterName']
-                    container_instances = describe_container_instances(ecs_client, cluster_name)
-                    services = describe_services(ecs_client, cluster_name)
-                    task_definitions = list_task_definitions(ecs_client, family_prefix='')
-                    tasks = describe_tasks(ecs_client, cluster_name)
-
-                    writer.writerow({'ResourceType': 'Cluster', 'ResourceName': cluster_name, 'Details': str(cluster)})
-
-                    for instance in container_instances:
-                        writer.writerow({'ResourceType': 'ContainerInstance', 'ResourceName': instance['containerInstanceArn'], 'Details': str(instance)})
-
-                    for service in services:
-                        writer.writerow({'ResourceType': 'Service', 'ResourceName': service['serviceName'], 'Details': str(service)})
-
-                    for task_definition_arn in task_definitions:
-                        task_definition = describe_task_definition(ecs_client, task_definition_arn)
-                        writer.writerow({'ResourceType': 'TaskDefinition', 'ResourceName': task_definition['taskDefinitionArn'], 'Details': str(task_definition)})
-
-                    for task in tasks:
-                        writer.writerow({'ResourceType': 'Task', 'ResourceName': task['taskArn'], 'Details': str(task)})
-
-        print(f'Completed fetching ECS insights. Results saved to {filename}')
     except Exception as e:
         print(f"An error occurred: {e}")
 
