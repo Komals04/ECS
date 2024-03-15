@@ -2,6 +2,10 @@ import boto3
 import csv
 from datetime import datetime
 
+def describe_capacity_providers(ecs_client):
+    response = ecs_client.describe_capacity_providers()
+    return response['capacityProviders']
+
 def describe_clusters(ecs_client):
     response = ecs_client.describe_clusters()
     return response['clusters']
@@ -18,6 +22,10 @@ def describe_task_definition(ecs_client, task_definition_arn):
     response = ecs_client.describe_task_definition(taskDefinition=task_definition_arn)
     return response['taskDefinition']
 
+def describe_task_sets(ecs_client, cluster_name, service_name):
+    response = ecs_client.describe_task_sets(cluster=cluster_name, service=service_name)
+    return response['taskSets']
+
 def describe_tasks(ecs_client, cluster_name):
     response = ecs_client.list_tasks(cluster=cluster_name)
     task_arns = response['taskArns']
@@ -27,59 +35,101 @@ def describe_tasks(ecs_client, cluster_name):
         tasks.append(task)
     return tasks
 
+def list_account_settings(ecs_client):
+    response = ecs_client.list_account_settings()
+    return response['settings']
+
+def list_attributes(ecs_client, target_type, target_id):
+    response = ecs_client.list_attributes(targetType=target_type, targetId=target_id)
+    return response['attributes']
+
+def list_clusters(ecs_client):
+    response = ecs_client.list_clusters()
+    return response['clusterArns']
+
+def list_container_instances(ecs_client, cluster_name):
+    response = ecs_client.list_container_instances(cluster=cluster_name)
+    return response['containerInstanceArns']
+
+def list_services(ecs_client, cluster_name):
+    response = ecs_client.list_services(cluster=cluster_name)
+    return response['serviceArns']
+
+def list_services_by_namespace(ecs_client, cluster_name, service_namespace):
+    response = ecs_client.list_services(cluster=cluster_name, launchType='FARGATE', schedulingStrategy='REPLICA', serviceName=service_namespace)
+    return response['serviceArns']
+
+def list_tags_for_resource(ecs_client, resource_arn):
+    response = ecs_client.list_tags_for_resource(resourceArn=resource_arn)
+    return response['tags']
+
+def list_task_definition_families(ecs_client, family_prefix):
+    response = ecs_client.list_task_definition_families(familyPrefix=family_prefix)
+    return response['families']
+
 def list_task_definitions(ecs_client, family_prefix):
     response = ecs_client.list_task_definitions(familyPrefix=family_prefix)
     return response['taskDefinitionArns']
 
+def list_tasks(ecs_client, cluster_name):
+    response = ecs_client.list_tasks(cluster=cluster_name)
+    return response['taskArns']
+
+def flatten_tags(tag_list):
+    return [{'Key': tag['key'], 'Value': tag['value']} for tag in tag_list]
+
+def flatten_nested_attributes(items):
+    return [
+        {f"{k}_{sub_k}": sub_v for sub_k, sub_v in item.items()}
+        for k, v in items[0].items()
+        for item in items
+    ] if items else []
+
 def main():
     try:
-        # Specify your AWS region here
-        region = 'us-east-1'
-        
-        ecs_client = boto3.client('ecs', region_name=region)
-        
-        clusters = describe_clusters(ecs_client)
-        if not clusters:
-            print("No ECS clusters found.")
-            return
+        regions = ['us-east-1', 'us-east-2']  # Hardcoded regions
 
-        container_instances = describe_container_instances(ecs_client, clusters[0]['clusterName'])
-        if not container_instances:
-            print("No container instances found.")
-            return
-
-        services = describe_services(ecs_client, clusters[0]['clusterName'])
-        if not services:
-            print("No ECS services found.")
-            return
-
-        task_definitions = list_task_definitions(ecs_client, family_prefix='')
-        if not task_definitions:
-            print("No task definitions found.")
-            return
-
-        tasks = describe_tasks(ecs_client, clusters[0]['clusterName'])
-
-        # Write to CSV
         timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
-        filename = f'ecs_insights_{timestamp}.csv'
+        filename = f'ecs_insights_{timestamp}.csv'  # CSV file for ECS
+
+        fieldnames = [
+            'ResourceType', 'ResourceName', 'Details',
+        ]
 
         with open(filename, 'w', newline='') as csvfile:
-            fieldnames = ['ResourceType', 'ResourceName', 'Details']
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
             writer.writeheader()
 
-            for cluster in clusters:
-                writer.writerow({'ResourceType': 'Cluster', 'ResourceName': cluster['clusterName'], 'Details': str(cluster)})
-            for instance in container_instances:
-                writer.writerow({'ResourceType': 'ContainerInstance', 'ResourceName': instance['containerInstanceArn'], 'Details': str(instance)})
-            for service in services:
-                writer.writerow({'ResourceType': 'Service', 'ResourceName': service['serviceName'], 'Details': str(service)})
-            for task_definition_arn in task_definitions:
-                task_definition = describe_task_definition(ecs_client, task_definition_arn)
-                writer.writerow({'ResourceType': 'TaskDefinition', 'ResourceName': task_definition['taskDefinitionArn'], 'Details': str(task_definition)})
-            for task in tasks:
-                writer.writerow({'ResourceType': 'Task', 'ResourceName': task['taskArn'], 'Details': str(task)})
+            for region in regions:
+                ecs_client = boto3.client('ecs', region_name=region)
+
+                capacity_providers = describe_capacity_providers(ecs_client)
+                clusters = describe_clusters(ecs_client)
+
+                for cp in capacity_providers:
+                    writer.writerow({'ResourceType': 'CapacityProvider', 'ResourceName': cp['capacityProviderName'], 'Details': str(cp)})
+
+                for cluster in clusters:
+                    cluster_name = cluster['clusterName']
+                    container_instances = describe_container_instances(ecs_client, cluster_name)
+                    services = describe_services(ecs_client, cluster_name)
+                    task_definitions = list_task_definitions(ecs_client, family_prefix='')
+                    tasks = describe_tasks(ecs_client, cluster_name)
+
+                    writer.writerow({'ResourceType': 'Cluster', 'ResourceName': cluster_name, 'Details': str(cluster)})
+
+                    for instance in container_instances:
+                        writer.writerow({'ResourceType': 'ContainerInstance', 'ResourceName': instance['containerInstanceArn'], 'Details': str(instance)})
+
+                    for service in services:
+                        writer.writerow({'ResourceType': 'Service', 'ResourceName': service['serviceName'], 'Details': str(service)})
+
+                    for task_definition_arn in task_definitions:
+                        task_definition = describe_task_definition(ecs_client, task_definition_arn)
+                        writer.writerow({'ResourceType': 'TaskDefinition', 'ResourceName': task_definition['taskDefinitionArn'], 'Details': str(task_definition)})
+
+                    for task in tasks:
+                        writer.writerow({'ResourceType': 'Task', 'ResourceName': task['taskArn'], 'Details': str(task)})
 
         print(f'Completed fetching ECS insights. Results saved to {filename}')
     except Exception as e:
