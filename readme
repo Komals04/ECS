@@ -1,253 +1,115 @@
 import boto3
 import csv
 from datetime import datetime
-from botocore.exceptions import ClientError
 
-def extract_core_count(processor_features):
-    for feature in processor_features:
-        if feature.get('Name') == 'coreCount':
-            return feature.get('Value', 'Not Configured')
-    return 'Not Configured'
+def describe_capacity_providers(ecs_client):
+    response = ecs_client.describe_capacity_providers()
+    return response['capacityProviders']
 
-def flatten_tags(tag_list):
-    logical_id_tag = next((tag for tag in tag_list if tag['Key'] == 'aws:cloudformation:logical-id'), None)
-    logical_id = logical_id_tag['Value'] if logical_id_tag else 'Not Configured'
-    return {'LogicalId': logical_id}
+def describe_clusters(ecs_client):
+    response = ecs_client.describe_clusters()
+    return response['clusters']
 
-def flatten_nested_attributes(items):
-    return [
-        {f"{k}_{sub_k}": sub_v for sub_k, sub_v in item.items()}
-        for k, v in items[0].items()
-        for item in items
-    ] if items else []
+def describe_container_instances(ecs_client, cluster_name):
+    response = ecs_client.describe_container_instances(cluster=cluster_name)
+    return response['containerInstances']
 
-def get_instance_configuration(rds_client, db_instance):
-    try:
-        response = rds_client.describe_db_instances(DBInstanceIdentifier=db_instance)
-        instance = response['DBInstances'][0]
+def describe_services(ecs_client, cluster_name):
+    response = ecs_client.describe_services(cluster=cluster_name)
+    return response['services']
 
-        processor_features = instance.get('ProcessorFeatures', [])
-        core_count = extract_core_count(processor_features)
+def describe_task_definition(ecs_client, task_definition_arn):
+    response = ecs_client.describe_task_definition(taskDefinition=task_definition_arn)
+    return response['taskDefinition']
 
-        # Fetch vCPU information
-        vcpu = instance.get('vCPU', 'Not Configured')
+def describe_task_sets(ecs_client, cluster_name, service_name):
+    response = ecs_client.describe_task_sets(cluster=cluster_name, service=service_name)
+    return response['taskSets']
 
-        # Extracting the specific tag key "aws:cloudformation:logical-id"
-        tags = instance.get('TagList', [])
-        flattened_tags = flatten_tags(tags)
+def describe_tasks(ecs_client, cluster_name):
+    response = ecs_client.list_tasks(cluster=cluster_name)
+    task_arns = response['taskArns']
+    tasks = []
+    for task_arn in task_arns:
+        task = ecs_client.describe_tasks(cluster=cluster_name, tasks=[task_arn])['tasks'][0]
+        tasks.append(task)
+    return tasks
 
-        instance_configuration = {
-            'DBIdentifier': instance['DBInstanceIdentifier'],
-            'Status': instance['DBInstanceStatus'],
-            'Role': get_role_information(rds_client, db_instance),
-            'Engine': instance['Engine'],
-            'Region': rds_client.meta.region_name,
-            'Size': instance['DBInstanceClass'],
-            'CPU': instance['AllocatedStorage'],
-            'ProvisionedIOPS': instance.get('Iops', 'Not Configured'),
-            'StorageType': instance.get('StorageType', 'Not Configured'),
-            'NetworkType': instance.get('NetworkType', 'Not Configured'),  # Added NetworkType
-            'StorageThroughput': instance.get('StorageThroughput', 'Not Configured'),  # Added StorageThroughput
-            'Multi-AZ': instance.get('MultiAZ', 'Not Configured'),
-            'GlobalCluster': instance.get('GlobalClusterIdentifier', None),
-            'InstanceType': instance.get('DBInstanceClass', 'Not Configured'),
-            'PerformanceInsightsEnabled': instance.get('PerformanceInsights', {}).get('Enabled', 'Not Configured'),
-            'PerformanceInsightsKMSKeyId': instance.get('PerformanceInsights', {}).get('KMSKeyId', 'Not Configured'),
-            'PerformanceInsightsRetentionPeriod': instance.get('PerformanceInsights', {}).get('RetentionPeriod', 'Not Configured'),
-            'ServerlessV2ScalingConfiguration': instance.get('ServerlessV2ScalingConfiguration', 'Not Configured'),
-            'AvailabilityZone': instance.get('AvailabilityZone', 'Not Configured'),
-            'PreferredMaintenanceWindow': instance.get('PreferredMaintenanceWindow', 'Not Configured'),
-            'BackupRetentionPeriod': instance.get('BackupRetentionPeriod', 'Not Configured'),
-            'MultiAZ': instance.get('MultiAZ', 'Not Configured'),
-            'PubliclyAccessible': instance.get('PubliclyAccessible', 'Not Configured'),
-            'VpcSecurityGroups': [group['VpcSecurityGroupId'] for group in instance.get('VpcSecurityGroups', [])],
-            'DBSubnetGroupName': instance.get('DBSubnetGroup', {}).get('DBSubnetGroupName', 'Not Configured'),
-            'ReadReplicaDBClusterIdentifiers': instance.get('ReadReplicaDBClusterIdentifiers', []),
-            'ProcessorFeatures': processor_features,
-            'CoreCount': core_count,
-            'vCPU': vcpu,
-            **flattened_tags,  # Include flattened tags for instances
-            # ... (more attributes)
-        }
+def list_account_settings(ecs_client):
+    response = ecs_client.list_account_settings()
+    return response['settings']
 
-        if 'Provisioned IOPS' in instance_configuration['InstanceType']:
-            instance_configuration['MaximumCapacity'] = str(instance.get('Iops', 'Not Configured'))
+def list_attributes(ecs_client, target_type):
+    response = ecs_client.list_attributes(targetType=target_type)
+    return response['attributes']
 
-        return instance_configuration
-    except ClientError as e:
-        print(f"Error retrieving instance configuration for RDS instance {db_instance}: {e}")
-        return None
+def list_clusters(ecs_client):
+    response = ecs_client.list_clusters()
+    return response['clusterArns']
 
-def get_role_information(rds_client, db_instance):
-    try:
-        response = rds_client.describe_db_instances(DBInstanceIdentifier=db_instance)
-        instance = response['DBInstances'][0]
+def list_container_instances(ecs_client, cluster_name):
+    response = ecs_client.list_container_instances(cluster=cluster_name)
+    return response['containerInstanceArns']
 
-        global_cluster_identifier = instance.get('GlobalClusterIdentifier', None)
-        db_cluster_role = instance.get('DBClusterRole', None)
+def list_services(ecs_client, cluster_name):
+    response = ecs_client.list_services(cluster=cluster_name)
+    return response['serviceArns']
 
-        if global_cluster_identifier:
-            if db_cluster_role == 'WRITER':
-                return 'Writer Instance'
-            elif db_cluster_role == 'READER':
-                return 'Reader Instance'
-            else:
-                return 'Role not determined'
-        else:
-            return 'Standalone Instance'
-    except ClientError as e:
-        print(f"Error retrieving role information for RDS instance {db_instance}: {e}")
-        return None
+def list_services_by_namespace(ecs_client, namespace):
+    response = ecs_client.list_services_by_namespace(namespace=namespace)
+    return response['serviceArns']
 
-def get_rds_insights(rds_client, db_instance):
-    try:
-        response = rds_client.describe_db_instances(DBInstanceIdentifier=db_instance)
-        instance = response['DBInstances'][0]
+def list_tags_for_resource(ecs_client, resource_arn):
+    response = ecs_client.list_tags_for_resource(resourceArn=resource_arn)
+    return response['tags']
 
-        global_cluster_identifier = instance.get('GlobalClusterIdentifier', None)
+def list_task_definition_families(ecs_client, family_prefix):
+    response = ecs_client.list_task_definition_families(familyPrefix=family_prefix)
+    return response['families']
 
-        insights = {
-            'DBIdentifier': instance['DBInstanceIdentifier'],
-            'Status': instance['DBInstanceStatus'],
-            'Role': get_role_information(rds_client, db_instance),
-            'Engine': instance['Engine'],
-            'Region': rds_client.meta.region_name,
-            'Size': instance['DBInstanceClass'],
-            'CPU': instance['AllocatedStorage'],
-            'ProvisionedIOPS': instance.get('Iops', 'Not Configured'),
-            'StorageType': instance.get('StorageType', 'Not Configured'),
-            'NetworkType': instance.get('NetworkType', 'Not Configured'),  # Added NetworkType
-            'StorageThroughput': instance.get('StorageThroughput', 'Not Configured'),  # Added StorageThroughput
-            'Multi-AZ': instance.get('MultiAZ', 'Not Configured'),
-            'GlobalCluster': global_cluster_identifier,
-        }
+def list_task_definitions(ecs_client, family_prefix):
+    response = ecs_client.list_task_definitions(familyPrefix=family_prefix)
+    return response['taskDefinitionArns']
 
-        instance_configuration = get_instance_configuration(rds_client, db_instance)
-        insights.update(instance_configuration)
-
-        return insights
-    except ClientError as e:
-        print(f"Error retrieving insights for RDS instance {db_instance}: {e}")
-        return None
-
-def get_db_cluster_info(rds_client, db_cluster_identifier):
-    try:
-        response = rds_client.describe_db_clusters(DBClusterIdentifier=db_cluster_identifier)
-        db_cluster = response['DBClusters'][0]
-
-        # Fetch ServerlessV2ScalingConfiguration attributes
-        serverless_v2_scaling_configuration = db_cluster.get('ServerlessV2ScalingConfiguration', {})
-        min_capacity = serverless_v2_scaling_configuration.get('MinCapacity', 'Not Configured')
-        max_capacity = serverless_v2_scaling_configuration.get('MaxCapacity', 'Not Configured')
-
-        cluster_info = {
-            'DBClusterIdentifier': db_cluster['DBClusterIdentifier'],
-            'ClusterStatus': db_cluster['Status'],
-            'ClusterEngine': db_cluster['Engine'],
-            'ClusterRegion': rds_client.meta.region_name,
-            'AllocatedStorage': db_cluster.get('AllocatedStorage', 'Not Configured'),
-            'AvailabilityZones': db_cluster.get('AvailabilityZones', []),
-            'BackupRetentionPeriod': db_cluster.get('BackupRetentionPeriod', 'Not Configured'),
-            'CharacterSetName': db_cluster.get('CharacterSetName', 'Not Configured'),
-            'DatabaseName': db_cluster.get('DatabaseName', 'Not Configured'),
-
-            'DBClusterMembers': [
-                {
-                    'DBInstanceIdentifier': member['DBInstanceIdentifier'],
-                    'IsClusterWriter': member.get('IsClusterWriter', 'Not Configured'),
-                } for member in db_cluster.get('DBClusterMembers', [])
-            ],
-
-            'VpcSecurityGroups': [
-                {
-                    'VpcSecurityGroupId': group['VpcSecurityGroupId'],
-                    'Status': group.get('Status', 'Not Configured')
-                } for group in db_cluster.get('VpcSecurityGroups', [])
-            ],
-
-            'AssociatedRoles': [
-                {
-                    'RoleArn': role['RoleArn'],
-                    'Status': role.get('Status', 'Not Configured'),
-                    'FeatureName': role.get('FeatureName', 'Not Configured')
-                } for role in db_cluster.get('AssociatedRoles', [])
-            ],
-
-            'DomainMemberships': db_cluster.get('DomainMemberships', []),
-
-            'Tags': flatten_tags(db_cluster.get('TagList', [])),  # Include flattened tags for clusters
-
-            'ScalingConfigurationInfo': {
-                'MinCapacity': min_capacity,
-                'MaxCapacity': max_capacity,
-            },
-
-            # ... (more attributes)
-        }
-
-        return cluster_info
-    except ClientError as e:
-        print(f"Error retrieving information for RDS cluster {db_cluster_identifier}: {e}")
-        return None
+def list_tasks(ecs_client, cluster_name):
+    response = ecs_client.list_tasks(cluster=cluster_name)
+    return response['taskArns']
 
 def main():
     try:
-        regions = ['us-east-1', 'us-east-2']  # Hardcoded regions
+        # Specify your AWS region here
+        region = 'us-east-1'
+        
+        ecs_client = boto3.client('ecs', region_name=region)
+        
+        clusters = describe_clusters(ecs_client)
+        container_instances = describe_container_instances(ecs_client, clusters[0]['clusterName'])
+        services = describe_services(ecs_client, clusters[0]['clusterName'])
+        task_definitions = list_task_definitions(ecs_client, family_prefix='')
+        tasks = describe_tasks(ecs_client, clusters[0]['clusterName'])
 
+        # Write to CSV
         timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
-        instance_filename = f'rds_insights_instances_{timestamp}.csv'  # CSV file for RDS instances
-        cluster_filename = f'rds_insights_clusters_{timestamp}.csv'  # CSV file for RDS clusters
+        filename = f'ecs_insights_{timestamp}.csv'
 
-        instance_fieldnames = [
-            'DBIdentifier', 'Status', 'Role', 'Engine', 'Region', 'Size', 'CPU', 'vCPU',
-            'ProvisionedIOPS', 'StorageType', 'NetworkType', 'StorageThroughput',  # Added NetworkType and StorageThroughput
-            'Multi-AZ', 'GlobalCluster',
-            'InstanceType', 'PerformanceInsightsEnabled', 'PerformanceInsightsKMSKeyId',
-            'PerformanceInsightsRetentionPeriod', 'ServerlessV2ScalingConfiguration',
-            'AvailabilityZone', 'PreferredMaintenanceWindow', 'BackupRetentionPeriod',
-            'MultiAZ', 'PubliclyAccessible', 'VpcSecurityGroups', 'DBSubnetGroupName',
-            'ReadReplicaDBClusterIdentifiers', 'ProcessorFeatures', 'CoreCount',
-            'LogicalId',  # Added LogicalId for instances
-            # ... (more attributes)
-        ]
+        with open(filename, 'w', newline='') as csvfile:
+            fieldnames = ['ResourceType', 'ResourceName', 'Details']
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            writer.writeheader()
 
-        cluster_fieldnames = [
-            'DBClusterIdentifier', 'ClusterStatus', 'ClusterEngine', 'ClusterRegion',
-            'AllocatedStorage', 'AvailabilityZones', 'BackupRetentionPeriod', 'CharacterSetName', 'DatabaseName',
-            'DBClusterMembers', 'VpcSecurityGroups', 'AssociatedRoles', 'DomainMemberships', 'Tags', 'ScalingConfigurationInfo',
-            # ... (more attributes)
-        ]
+            for cluster in clusters:
+                writer.writerow({'ResourceType': 'Cluster', 'ResourceName': cluster['clusterName'], 'Details': str(cluster)})
+            for instance in container_instances:
+                writer.writerow({'ResourceType': 'ContainerInstance', 'ResourceName': instance['containerInstanceArn'], 'Details': str(instance)})
+            for service in services:
+                writer.writerow({'ResourceType': 'Service', 'ResourceName': service['serviceName'], 'Details': str(service)})
+            for task_definition_arn in task_definitions:
+                task_definition = describe_task_definition(ecs_client, task_definition_arn)
+                writer.writerow({'ResourceType': 'TaskDefinition', 'ResourceName': task_definition['taskDefinitionArn'], 'Details': str(task_definition)})
+            for task in tasks:
+                writer.writerow({'ResourceType': 'Task', 'ResourceName': task['taskArn'], 'Details': str(task)})
 
-        with open(instance_filename, 'w', newline='') as instance_csvfile:
-            instance_writer = csv.DictWriter(instance_csvfile, fieldnames=instance_fieldnames)
-            instance_writer.writeheader()
-
-            with open(cluster_filename, 'w', newline='') as cluster_csvfile:
-                cluster_writer = csv.DictWriter(cluster_csvfile, fieldnames=cluster_fieldnames)
-                cluster_writer.writeheader()
-
-                for region in regions:
-                    rds_client = boto3.client('rds', region_name=region)
-
-                    response_instances = rds_client.describe_db_instances()
-                    instances = response_instances['DBInstances']
-
-                    response_clusters = rds_client.describe_db_clusters()
-                    clusters = response_clusters['DBClusters']
-
-                    for instance in instances:
-                        insights = get_rds_insights(rds_client, instance['DBInstanceIdentifier'])
-                        if insights:
-                            instance_writer.writerow(insights)
-                            print(f"Exported details for RDS instance: {insights['DBIdentifier']} in region {region}")
-
-                    for cluster in clusters:
-                        cluster_info = get_db_cluster_info(rds_client, cluster['DBClusterIdentifier'])
-                        if cluster_info:
-                            cluster_writer.writerow(cluster_info)
-                            print(f"Exported details for RDS cluster: {cluster_info['DBClusterIdentifier']} in region {region}")
-
-                print(f'Completed checking and exporting RDS insights to {instance_filename} and {cluster_filename} for both regions.')
+        print(f'Completed fetching ECS insights. Results saved to {filename}')
     except Exception as e:
         print(f"An error occurred: {e}")
 
