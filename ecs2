@@ -2,24 +2,24 @@ import boto3
 import csv
 from datetime import datetime, timedelta
 
-def list_ecs_clusters():
-    client = boto3.client('ecs')
+def list_ecs_clusters(region):
+    client = boto3.client('ecs', region_name=region)
     response = client.list_clusters()
     return response['clusterArns']
 
-def list_target_groups(load_balancer_arn):
-    client = boto3.client('elbv2')
+def list_target_groups(load_balancer_arn, region):
+    client = boto3.client('elbv2', region_name=region)
     response = client.describe_target_groups(LoadBalancerArn=load_balancer_arn)
     return [tg['TargetGroupName'] for tg in response['TargetGroups']]
 
-def get_load_balancer_arn(cluster_arn):
-    client = boto3.client('ecs')
+def get_load_balancer_arn(cluster_arn, region):
+    client = boto3.client('ecs', region_name=region)
     response = client.describe_clusters(clusters=[cluster_arn])
     cluster = response['clusters'][0]
     return cluster.get('defaultCapacityProviderStrategy', {}).get('capacityProvider')
 
-def get_cloudwatch_metrics(cluster_arn, target_group, start_time, end_time):
-    client = boto3.client('cloudwatch')
+def get_cloudwatch_metrics(cluster_arn, target_group, start_time, end_time, region):
+    client = boto3.client('cloudwatch', region_name=region)
 
     metrics = [
         {
@@ -89,22 +89,23 @@ def save_to_csv(data, filename):
         for row in data:
             writer.writerow(row)
 
-def main():
-    clusters = list_ecs_clusters()
+def main(region):
+    clusters = list_ecs_clusters(region)
     end_time = datetime.utcnow()
     start_time = end_time - timedelta(hours=1)
 
     all_metrics_data = []
     for cluster_arn in clusters:
-        lb_arn = get_load_balancer_arn(cluster_arn)
-        target_groups = list_target_groups(lb_arn)
+        lb_arn = get_load_balancer_arn(cluster_arn, region)
+        target_groups = list_target_groups(lb_arn, region)
         for target_group in target_groups:
-            metrics_data = get_cloudwatch_metrics(cluster_arn, target_group, start_time, end_time)
+            metrics_data = get_cloudwatch_metrics(cluster_arn, target_group, start_time, end_time, region)
             all_metrics_data.extend(metrics_data)
 
-    filename = 'ecs_clusters_metrics.csv'
+    filename = f'ecs_clusters_metrics_{region}.csv'
     save_to_csv(all_metrics_data, filename)
     print(f"Metrics data saved to {filename}")
 
 if __name__ == "__main__":
-    main()
+    region = 'your_region'  # Replace with your desired AWS region
+    main(region)
