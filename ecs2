@@ -15,8 +15,10 @@ def list_target_groups(load_balancer_arn, region):
 def get_load_balancer_arn(cluster_arn, region):
     client = boto3.client('ecs', region_name=region)
     response = client.describe_clusters(clusters=[cluster_arn])
-    cluster = response['clusters'][0]
-    return cluster.get('defaultCapacityProviderStrategy', {}).get('capacityProvider')
+    if 'clusters' in response and response['clusters']:
+        cluster = response['clusters'][0]
+        return cluster.get('defaultCapacityProviderStrategy', {}).get('capacityProvider')
+    return None
 
 def get_cloudwatch_metrics(cluster_arn, target_group, start_time, end_time, region):
     client = boto3.client('cloudwatch', region_name=region)
