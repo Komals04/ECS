@@ -72,13 +72,15 @@ def get_cloudwatch_metrics(cluster_arn, target_group, start_time, end_time, regi
             Statistics=[metric['Statistic']]
         )
         for datapoint in response['Datapoints']:
-            data.append({
-                'ClusterName': cluster_arn,
-                'TargetGroup': target_group,
-                'MetricName': metric['MetricName'],
-                'Timestamp': datapoint['Timestamp'].strftime('%Y-%m-%d %H:%M:%S'),
-                'Value': datapoint[metric['Statistic']]
-            })
+            value = datapoint.get(metric['Statistic'])
+            if value is not None:
+                data.append({
+                    'ClusterName': cluster_arn,
+                    'TargetGroup': target_group,
+                    'MetricName': metric['MetricName'],
+                    'Timestamp': datapoint['Timestamp'].strftime('%Y-%m-%d %H:%M:%S'),
+                    'Value': value
+                })
     return data
 
 def save_to_csv(data, filename):
@@ -97,15 +99,16 @@ def main(region):
     all_metrics_data = []
     for cluster_arn in clusters:
         lb_arn = get_load_balancer_arn(cluster_arn, region)
-        target_groups = list_target_groups(lb_arn, region)
-        for target_group in target_groups:
-            metrics_data = get_cloudwatch_metrics(cluster_arn, target_group, start_time, end_time, region)
-            all_metrics_data.extend(metrics_data)
+        if lb_arn:
+            target_groups = list_target_groups(lb_arn, region)
+            for target_group in target_groups:
+                metrics_data = get_cloudwatch_metrics(cluster_arn, target_group, start_time, end_time, region)
+                all_metrics_data.extend(metrics_data)
 
     filename = f'ecs_clusters_metrics_{region}.csv'
     save_to_csv(all_metrics_data, filename)
     print(f"Metrics data saved to {filename}")
 
 if __name__ == "__main__":
-    region = 'your_region'  # Replace with your desired AWS region
+    region = 'us-east-1'
     main(region)
