@@ -1,8 +1,8 @@
 Traceback (most recent call last):
-  File "C:\Users\ux186612\Documents\ecs2.py", line 114, in <module>
+  File "C:\Users\ux186612\Documents\ecs2.py", line 116, in <module>
     main(region)
-  File "C:\Users\ux186612\Documents\ecs2.py", line 101, in main
+  File "C:\Users\ux186612\Documents\ecs2.py", line 103, in main
     lb_arn = get_load_balancer_arn(cluster_arn, region)
-  File "C:\Users\ux186612\Documents\ecs2.py", line 19, in get_load_balancer_arn
+  File "C:\Users\ux186612\Documents\ecs2.py", line 20, in get_load_balancer_arn
     return cluster.get('defaultCapacityProviderStrategy', {}).get('capacityProvider')
 AttributeError: 'list' object has no attribute 'get
