@@ -1,101 +1,110 @@
 import boto3
 import csv
-from datetime import datetime
-from botocore.exceptions import ClientError
+from datetime import datetime, timedelta
 
-def describe_capacity_providers(ecs_client):
-    try:
-        response = ecs_client.describe_capacity_providers()
-        capacity_providers = response.get('capacityProviders', [])
-        return capacity_providers
-    except Exception as e:
-        print(f"Error occurred while describing capacity providers: {e}")
-        return []
+def list_ecs_clusters():
+    client = boto3.client('ecs')
+    response = client.list_clusters()
+    return response['clusterArns']
 
-def describe_clusters(ecs_client):
-    try:
-        response = ecs_client.describe_clusters()
-        clusters = response.get('clusters', [])
-        return clusters
-    except Exception as e:
-        print(f"Error occurred while describing clusters: {e}")
-        return []
+def list_target_groups(load_balancer_arn):
+    client = boto3.client('elbv2')
+    response = client.describe_target_groups(LoadBalancerArn=load_balancer_arn)
+    return [tg['TargetGroupName'] for tg in response['TargetGroups']]
 
-def describe_container_instances(ecs_client):
-    try:
-        response = ecs_client.describe_container_instances()
-        container_instances = response.get('containerInstances', [])
-        return container_instances
-    except Exception as e:
-        print(f"Error occurred while describing container instances: {e}")
-        return []
+def get_load_balancer_arn(cluster_arn):
+    client = boto3.client('ecs')
+    response = client.describe_clusters(clusters=[cluster_arn])
+    cluster = response['clusters'][0]
+    return cluster.get('defaultCapacityProviderStrategy', {}).get('capacityProvider')
 
-def describe_services(ecs_client):
-    try:
-        response = ecs_client.describe_services()
-        services = response.get('services', [])
-        return services
-    except Exception as e:
-        print(f"Error occurred while describing services: {e}")
-        return []
+def get_cloudwatch_metrics(cluster_arn, target_group, start_time, end_time):
+    client = boto3.client('cloudwatch')
 
-def describe_task_definition(ecs_client):
-    try:
-        response = ecs_client.describe_task_definition()
-        task_definitions = response.get('taskDefinitions', [])
-        return task_definitions
-    except Exception as e:
-        print(f"Error occurred while describing task definitions: {e}")
-        return []
+    metrics = [
+        {
+            'Namespace': 'AWS/ECS',
+            'MetricName': 'RequestCount',
+            'Dimensions': [
+                {
+                    'Name': 'ClusterName',
+                    'Value': cluster_arn
+                }
+            ],
+            'Statistic': 'Sum',
+            'Unit': 'Count'
+        },
+        {
+            'Namespace': 'AWS/ApplicationELB',
+            'MetricName': 'RequestCountPerTarget',
+            'Dimensions': [
+                {
+                    'Name': 'TargetGroup',
+                    'Value': target_group
+                }
+            ],
+            'Statistic': 'Sum',
+            'Unit': 'Count'
+        },
+        {
+            'Namespace': 'AWS/ApplicationELB',
+            'MetricName': 'TargetResponseTime',
+            'Dimensions': [
+                {
+                    'Name': 'TargetGroup',
+                    'Value': target_group
+                }
+            ],
+            'Statistic': 'Average',
+            'Unit': 'Seconds'
+        }
+    ]
 
-def describe_task_sets(ecs_client):
-    try:
-        response = ecs_client.describe_task_sets()
-        task_sets = response.get('taskSets', [])
-        return task_sets
-    except Exception as e:
-        print(f"Error occurred while describing task sets: {e}")
-        return []
+    data = []
+    for metric in metrics:
+        response = client.get_metric_statistics(
+            Namespace=metric['Namespace'],
+            MetricName=metric['MetricName'],
+            Dimensions=metric['Dimensions'],
+            StartTime=start_time,
+            EndTime=end_time,
+            Period=3600,
+            Statistics=[metric['Statistic']]
+        )
+        for datapoint in response['Datapoints']:
+            data.append({
+                'ClusterName': cluster_arn,
+                'TargetGroup': target_group,
+                'MetricName': metric['MetricName'],
+                'Timestamp': datapoint['Timestamp'].strftime('%Y-%m-%d %H:%M:%S'),
+                'Value': datapoint[metric['Statistic']]
+            })
+    return data
 
-def describe_tasks(ecs_client):
-    try:
-        response = ecs_client.describe_tasks()
-        tasks = response.get('tasks', [])
-        return tasks
-    except Exception as e:
-        print(f"Error occurred while describing tasks: {e}")
-        return []
+def save_to_csv(data, filename):
+    with open(filename, 'w', newline='') as csvfile:
+        fieldnames = ['ClusterName', 'TargetGroup', 'MetricName', 'Timestamp', 'Value']
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+        writer.writeheader()
+        for row in data:
+            writer.writerow(row)
 
 def main():
-    try:
-        regions = ['us-east-1', 'us-east-2']  # Add your desired regions here
-        timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+    clusters = list_ecs_clusters()
+    end_time = datetime.utcnow()
+    start_time = end_time - timedelta(hours=1)
 
-        for region in regions:
-            ecs_client = boto3.client('ecs', region_name=region)
+    all_metrics_data = []
+    for cluster_arn in clusters:
+        lb_arn = get_load_balancer_arn(cluster_arn)
+        target_groups = list_target_groups(lb_arn)
+        for target_group in target_groups:
+            metrics_data = get_cloudwatch_metrics(cluster_arn, target_group, start_time, end_time)
+            all_metrics_data.extend(metrics_data)
 
-            # Describe ECS resources
-            capacity_providers = describe_capacity_providers(ecs_client)
-            clusters = describe_clusters(ecs_client)
-            container_instances = describe_container_instances(ecs_client)
-            services = describe_services(ecs_client)
-            task_definitions = describe_task_definition(ecs_client)
-            task_sets = describe_task_sets(ecs_client)
-            tasks = describe_tasks(ecs_client)
-
-            # Write data to CSV files
-            with open(f'ecs_insights_{region}_{timestamp}.csv', 'w', newline='') as csvfile:
-                writer = csv.writer(csvfile)
-                writer.writerow(['ResourceType', 'ResourceData'])
-
-                for resource_data in [capacity_providers, clusters, container_instances, services, task_definitions, task_sets, tasks]:
-                    for resource in resource_data:
-                        writer.writerow([type(resource).__name__, resource])
-
-            print(f"Completed exporting ECS insights for region {region}")
-
-    except Exception as e:
-        print(f"An error occurred: {e}")
+    filename = 'ecs_clusters_metrics.csv'
+    save_to_csv(all_metrics_data, filename)
+    print(f"Metrics data saved to {filename}")
 
 if __name__ == "__main__":
     main()
