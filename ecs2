@@ -106,10 +106,10 @@ def get_target_group_response_time(cloudwatch_client, target_group_arn, start_ti
             Period=86400,  # Summarize daily
             Statistics=[statistic]
         )
-        total_response_time = sum(data_point[statistic] for data_point in metrics['Datapoints'])
-        return total_response_time
+        response_time = sum(data_point[statistic] for data_point in metrics['Datapoints']) / len(metrics['Datapoints'])
+        return response_time
     except Exception as e:
-        logging.error(f"Error getting target response time for target group {target_group_arn}: {e}")
+        logging.error(f"Error getting response time for target group {target_group_arn}: {e}")
         return 0
 
 def get_service_details(ecs_client, elbv2_client, cloudwatch_client, region, cluster_name, service_name):
@@ -120,12 +120,13 @@ def get_service_details(ecs_client, elbv2_client, cloudwatch_client, region, clu
         'LoadBalancerName': '',
         'Application': '',
         'SysLevel': '',
-        'RequestCountLast7Days': 0,  # Default to 0
-        'TargetGroupRequestCountLast7Days': 0,  # Default to 0
-        'TargetGroupResponseTimeLast7Days': 0  # Default to 0
+        'RequestCountLast7Days': 0,
+        'TargetGroupRequestCountLast7Days': 0,
+        'TargetGroupResponseTimeLast7Days': 0
     }
 
     load_balancer_arn = None  
+    target_group_arn = None
 
     try:
         response = ecs_client.describe_services(cluster=cluster_name, services=[service_name])
