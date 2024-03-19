@@ -1,69 +1,23 @@
-import boto3
-import csv
-from datetime import datetime, timedelta
-
-def get_metrics(cluster_name, service_name, metric_name, start_time, end_time):
-    client = boto3.client('cloudwatch')
-    
-    response = client.get_metric_data(
-        MetricDataQueries=[
-            {
-                'Id': 'm1',
-                'MetricStat': {
-                    'Metric': {
-                        'Namespace': 'AWS/ECS',
-                        'MetricName': metric_name,
-                        'Dimensions': [
-                            {
-                                'Name': 'ServiceName',
-                                'Value': service_name
-                            },
-                            {
-                                'Name': 'ClusterName',
-                                'Value': cluster_name
-                            }
-                        ]
-                    },
-                    'Period': 3600,  # 1 hour
-                    'Stat': 'Sum',  # You can change the statistic type here
-                },
-                'ReturnData': True,
-            },
-        ],
-        StartTime=start_time,
-        EndTime=end_time
-    )
-    
-    if 'MetricDataResults' in response:
-        return response['MetricDataResults'][0]['Values']
-    else:
-        return []
-
-def write_to_csv(data, filename):
-    with open(filename, mode='w', newline='') as file:
-        writer = csv.writer(file)
-        writer.writerow(['Timestamp', 'Value'])
-        for item in data:
-            writer.writerow([item['Timestamp'].isoformat(), item['Value']])
-
-if __name__ == "__main__":
-    region_name = 'us-east-1'
-    client = boto3.client('ecs', region_name=region_name)
-    clusters = client.list_clusters()['clusterArns']
-    start_time = datetime.utcnow() - timedelta(hours=1)  # 1 hour ago
-    end_time = datetime.utcnow()
-    
-    for cluster_arn in clusters:
-        cluster_name = cluster_arn.split('/')[-1]
-        services = client.list_services(cluster=cluster_arn)['serviceArns']
-        for service_arn in services:
-            service_name = service_arn.split('/')[-1]
-            request_count_data = get_metrics(cluster_name, service_name, 'RequestCount', start_time, end_time)
-            response_time_data = get_metrics(cluster_name, service_name, 'TargetResponseTime', start_time, end_time)
-            cpu_utilization_data = get_metrics(cluster_name, service_name, 'CPUUtilization', start_time, end_time)
-            memory_utilization_data = get_metrics(cluster_name, service_name, 'MemoryUtilization', start_time, end_time)
-            
-            write_to_csv(request_count_data, f'{cluster_name}_{service_name}_request_count.csv')
-            write_to_csv(response_time_data, f'{cluster_name}_{service_name}_response_time.csv')
-            write_to_csv(cpu_utilization_data, f'{cluster_name}_{service_name}_cpu_utilization.csv')
-            write_to_csv(memory_utilization_data, f'{cluster_name}_{service_name}_memory_utilization.csv')
+ERROR - Error getting service details for dkr-uepo-test-internal-v3-ecs-common-blue-ApplicationECSService-ksVbI3TTrrdm in cluster dkr-cluster-PROJ-PLAN-internal-blue: An error occurred (TargetGroupNotFound) when calling the DescribeTargetGroups operation: One or more target groups not found
+Traceback (most recent call last):
+  File "C:\Users\ux186612\Documents\ecs3.py", line 216, in <module>
+    main()
+  File "C:\Users\ux186612\Documents\ecs3.py", line 208, in main
+    service_details = future.result()
+  File "C:\Program Files\Python310\lib\concurrent\futures\_base.py", line 451, in result
+    return self.__get_result()
+  File "C:\Program Files\Python310\lib\concurrent\futures\_base.py", line 403, in __get_result
+    raise self._exception
+  File "C:\Program Files\Python310\lib\concurrent\futures\thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "C:\Users\ux186612\Documents\ecs3.py", line 179, in process_services
+    service_details_list.append(future.result())
+  File "C:\Program Files\Python310\lib\concurrent\futures\_base.py", line 451, in result
+    return self.__get_result()
+  File "C:\Program Files\Python310\lib\concurrent\futures\_base.py", line 403, in __get_result
+    raise self._exception
+  File "C:\Program Files\Python310\lib\concurrent\futures\thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "C:\Users\ux186612\Documents\ecs3.py", line 158, in get_service_details
+    if target_group_arn:
+UnboundLocalError: local variable 'target_group_arn' referenced before assignment
