@@ -55,7 +55,7 @@ def get_load_balancer_request_count(cloudwatch_client, load_balancer_arn, start_
             ],
             StartTime=start_time,
             EndTime=end_time,
-            Period=3600,  # Summarize hourly
+            Period=86400,  # Summarize daily
             Statistics=[statistic]
         )
         total_requests = sum(data_point[statistic] for data_point in metrics['Datapoints'])
@@ -79,13 +79,37 @@ def get_target_group_request_count(cloudwatch_client, target_group_arn, start_ti
             ],
             StartTime=start_time,
             EndTime=end_time,
-            Period=3600,  # Summarize hourly
+            Period=86400,  # Summarize daily
             Statistics=[statistic]
         )
         total_requests = sum(data_point[statistic] for data_point in metrics['Datapoints'])
         return total_requests
     except Exception as e:
         logging.error(f"Error getting request count for target group {target_group_arn}: {e}")
+        return 0
+
+def get_target_group_response_time(cloudwatch_client, target_group_arn, start_time, end_time):
+    metric_name = 'TargetResponseTime'
+    statistic = 'Average'
+    try:
+        metrics = cloudwatch_client.get_metric_statistics(
+            Namespace='AWS/ApplicationELB',
+            MetricName=metric_name,
+            Dimensions=[
+                {
+                    'Name': 'TargetGroup',
+                    'Value': target_group_arn
+                },
+            ],
+            StartTime=start_time,
+            EndTime=end_time,
+            Period=86400,  # Summarize daily
+            Statistics=[statistic]
+        )
+        total_response_time = sum(data_point[statistic] for data_point in metrics['Datapoints'])
+        return total_response_time
+    except Exception as e:
+        logging.error(f"Error getting target response time for target group {target_group_arn}: {e}")
         return 0
 
 def get_service_details(ecs_client, elbv2_client, cloudwatch_client, region, cluster_name, service_name):
@@ -96,12 +120,12 @@ def get_service_details(ecs_client, elbv2_client, cloudwatch_client, region, clu
         'LoadBalancerName': '',
         'Application': '',
         'SysLevel': '',
-        'RequestCountLastHour': 0,  # Request count for the last hour
-        'TargetGroupRequestCountLast24Hours': 0  # Target group request count for the last 24 hours
+        'RequestCountLast7Days': 0,  # Default to 0
+        'TargetGroupRequestCountLast7Days': 0,  # Default to 0
+        'TargetGroupResponseTimeLast7Days': 0  # Default to 0
     }
 
     load_balancer_arn = None  
-    target_group_arn = None
 
     try:
         response = ecs_client.describe_services(cluster=cluster_name, services=[service_name])
@@ -126,17 +150,20 @@ def get_service_details(ecs_client, elbv2_client, cloudwatch_client, region, clu
 
     if load_balancer_arn:
         now = datetime.utcnow()
-        start_time = now - timedelta(hours=1)  # Last hour
+        start_time = now - timedelta(days=7)
         end_time = now
         request_count = get_load_balancer_request_count(cloudwatch_client, load_balancer_arn, start_time, end_time)
-        service_details['RequestCountLastHour'] = request_count
+        service_details['RequestCountLast7Days'] = request_count
 
     if target_group_arn:
         now = datetime.utcnow()
-        start_time = now - timedelta(days=1)  # Last 24 hours
+        start_time = now - timedelta(days=7)
         end_time = now
         tg_request_count = get_target_group_request_count(cloudwatch_client, target_group_arn, start_time, end_time)
-        service_details['TargetGroupRequestCountLast24Hours'] = tg_request_count
+        service_details['TargetGroupRequestCountLast7Days'] = tg_request_count
+
+        tg_response_time = get_target_group_response_time(cloudwatch_client, target_group_arn, start_time, end_time)
+        service_details['TargetGroupResponseTimeLast7Days'] = tg_response_time
 
     return service_details
 
@@ -154,7 +181,7 @@ def process_services(ecs_client, elbv2_client, cloudwatch_client, region, cluste
     return service_details_list
 
 def write_to_csv(data, filename='ecs_service_details_retail_eng.csv'):
-    fieldnames = ['AWSAccountName', 'Region', 'ClusterName', 'LoadBalancerName', 'Application', 'SysLevel', 'RequestCountLastHour', 'TargetGroupRequestCountLast24Hours', 'ServiceARN']
+    fieldnames = ['AWSAccountName', 'Region', 'ClusterName', 'LoadBalancerName', 'Application', 'SysLevel', 'RequestCountLast7Days', 'TargetGroupRequestCountLast7Days', 'TargetGroupResponseTimeLast7Days', 'ServiceARN']
     with open(filename, mode='w', newline='') as file:
         writer = csv.DictWriter(file, fieldnames=fieldnames)
         writer.writeheader()
