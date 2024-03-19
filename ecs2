@@ -66,7 +66,7 @@ def get_load_balancer_request_count(cloudwatch_client, load_balancer_arn, start_
 
 def get_target_group_request_count(cloudwatch_client, target_group_arn, start_time, end_time):
     metric_name = 'RequestCountPerTarget'
-    statistic = 'Average'  # Change statistic to average
+    statistic = 'Sum'
     try:
         metrics = cloudwatch_client.get_metric_statistics(
             Namespace='AWS/ApplicationELB',
@@ -79,16 +79,11 @@ def get_target_group_request_count(cloudwatch_client, target_group_arn, start_ti
             ],
             StartTime=start_time,
             EndTime=end_time,
-            Period=86400,  # Summarize daily
+            Period=3600,  # Summarize hourly
             Statistics=[statistic]
         )
-        if 'Datapoints' in metrics and metrics['Datapoints']:
-            # Calculate average
-            total_values = len(metrics['Datapoints'])
-            total_requests = sum(data_point[statistic] for data_point in metrics['Datapoints'])
-            return total_requests / total_values
-        else:
-            return 0
+        total_requests = sum(data_point[statistic] for data_point in metrics['Datapoints'])
+        return total_requests
     except Exception as e:
         logging.error(f"Error getting request count for target group {target_group_arn}: {e}")
         return 0
@@ -102,7 +97,7 @@ def get_service_details(ecs_client, elbv2_client, cloudwatch_client, region, clu
         'Application': '',
         'SysLevel': '',
         'RequestCountLastHour': 0,  # Request count for the last hour
-        'TargetGroupRequestCountAvgLastDay': 0  # Average request count for the last day
+        'TargetGroupRequestCountLast24Hours': 0  # Target group request count for the last 24 hours
     }
 
     load_balancer_arn = None  
@@ -138,10 +133,10 @@ def get_service_details(ecs_client, elbv2_client, cloudwatch_client, region, clu
 
     if target_group_arn:
         now = datetime.utcnow()
-        start_time = now - timedelta(days=1)  # Last day
+        start_time = now - timedelta(days=1)  # Last 24 hours
         end_time = now
-        tg_request_count_avg = get_target_group_request_count(cloudwatch_client, target_group_arn, start_time, end_time)
-        service_details['TargetGroupRequestCountAvgLastDay'] = tg_request_count_avg
+        tg_request_count = get_target_group_request_count(cloudwatch_client, target_group_arn, start_time, end_time)
+        service_details['TargetGroupRequestCountLast24Hours'] = tg_request_count
 
     return service_details
 
@@ -159,7 +154,7 @@ def process_services(ecs_client, elbv2_client, cloudwatch_client, region, cluste
     return service_details_list
 
 def write_to_csv(data, filename='ecs_service_details_retail_eng.csv'):
-    fieldnames = ['AWSAccountName', 'Region', 'ClusterName', 'LoadBalancerName', 'Application', 'SysLevel', 'RequestCountLastHour', 'TargetGroupRequestCountAvgLastDay', 'ServiceARN']
+    fieldnames = ['AWSAccountName', 'Region', 'ClusterName', 'LoadBalancerName', 'Application', 'SysLevel', 'RequestCountLastHour', 'TargetGroupRequestCountLast24Hours', 'ServiceARN']
     with open(filename, mode='w', newline='') as file:
         writer = csv.DictWriter(file, fieldnames=fieldnames)
         writer.writeheader()
