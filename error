@@ -1,11 +1,26 @@
-Retrieving load balancers for ECS cluster APY-faas-antiphony-api-eng in region us-east-1...
-Found 1 load balancers for ECS cluster APY-faas-antiphony-api-eng
-Retrieving load balancers for ECS cluster dkr-cluster-CCTECS-WEBJAVA11V350-internal-green in region us-east-1...
+Retrieving load balancers for ECS cluster dkr-cluster-PROJ-PLAN-internal-blue in region us-east-1...
+Attempt 1 failed: An error occurred (TargetGroupNotFound) when calling the DescribeTargetGroups operation: One or more target groups not found
+Retrying in 1.0 seconds...
+Attempt 2 failed: An error occurred (TargetGroupNotFound) when calling the DescribeTargetGroups operation: One or more target groups not found
+Retrying in 2.0 seconds...
+Attempt 3 failed: An error occurred (TargetGroupNotFound) when calling the DescribeTargetGroups operation: One or more target groups not found
+Retrying in 4.0 seconds...
+Attempt 4 failed: An error occurred (TargetGroupNotFound) when calling the DescribeTargetGroups operation: One or more target groups not found
+Retrying in 8.0 seconds...
+Attempt 5 failed: An error occurred (TargetGroupNotFound) when calling the DescribeTargetGroups operation: One or more target groups not found
 Traceback (most recent call last):
-  File "C:\Users\ux186612\Documents\ecs-tg.py", line 79, in <module>
+  File "C:\Users\ux186612\Documents\ecs-tg.py", line 98, in <module>
     main()
-  File "C:\Users\ux186612\Documents\ecs-tg.py", line 66, in main
+  File "C:\Users\ux186612\Documents\ecs-tg.py", line 85, in main
     load_balancers = get_load_balancers(cluster_arn)
-  File "C:\Users\ux186612\Documents\ecs-tg.py", line 30, in get_load_balancers
-    load_balancers.append(target_group_info['LoadBalancerArns'][0])
-IndexError: list index out of range
+  File "C:\Users\ux186612\Documents\ecs-tg.py", line 51, in get_load_balancers
+    return call_with_retries(_get_load_balancers_inner)
+  File "C:\Users\ux186612\Documents\ecs-tg.py", line 15, in call_with_retries
+    return func()
+  File "C:\Users\ux186612\Documents\ecs-tg.py", line 43, in _get_load_balancers_inner
+    response = elbv2_client.describe_target_groups(TargetGroupArns=[target_group_arn])
+  File "C:\Program Files\Python310\lib\site-packages\botocore\client.py", line 553, in _api_call
+    return self._make_api_call(operation_name, kwargs)
+  File "C:\Program Files\Python310\lib\site-packages\botocore\client.py", line 1009, in _make_api_call
+    raise error_class(parsed_response, operation_name)
+botocore.errorfactory.TargetGroupNotFoundException: An error occurred (TargetGroupNotFound) when calling the DescribeTargetGroups operation: One or more target groups not found
