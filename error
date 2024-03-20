@@ -1,23 +1,16 @@
-ERROR - Error getting service details for dkr-uepo-test-internal-v3-ecs-common-blue-ApplicationECSService-ksVbI3TTrrdm in cluster dkr-cluster-PROJ-PLAN-internal-blue: An error occurred (TargetGroupNotFound) when calling the DescribeTargetGroups operation: One or more target groups not found
+Processing region us-east-1...
+Retrieving load balancers for ECS cluster did-cluster-ODC-METRICSSSSRDSECS-internal in region us-east-1...
+Found 0 load balancers for ECS cluster did-cluster-ODC-METRICSSSSRDSECS-internal
+Retrieving load balancers for ECS cluster dsk-cluster-DEPENDENCYSIMULATOR-EFUGXEM-internal-blue in region us-east-1...
 Traceback (most recent call last):
-  File "C:\Users\ux186612\Documents\ecs3.py", line 216, in <module>
+  File "C:\Users\ux186612\Documents\ecs-tg.py", line 76, in <module>
     main()
-  File "C:\Users\ux186612\Documents\ecs3.py", line 208, in main
-    service_details = future.result()
-  File "C:\Program Files\Python310\lib\concurrent\futures\_base.py", line 451, in result
-    return self.__get_result()
-  File "C:\Program Files\Python310\lib\concurrent\futures\_base.py", line 403, in __get_result
-    raise self._exception
-  File "C:\Program Files\Python310\lib\concurrent\futures\thread.py", line 58, in run
-    result = self.fn(*self.args, **self.kwargs)
-  File "C:\Users\ux186612\Documents\ecs3.py", line 179, in process_services
-    service_details_list.append(future.result())
-  File "C:\Program Files\Python310\lib\concurrent\futures\_base.py", line 451, in result
-    return self.__get_result()
-  File "C:\Program Files\Python310\lib\concurrent\futures\_base.py", line 403, in __get_result
-    raise self._exception
-  File "C:\Program Files\Python310\lib\concurrent\futures\thread.py", line 58, in run
-    result = self.fn(*self.args, **self.kwargs)
-  File "C:\Users\ux186612\Documents\ecs3.py", line 158, in get_service_details
-    if target_group_arn:
-UnboundLocalError: local variable 'target_group_arn' referenced before assignment
+  File "C:\Users\ux186612\Documents\ecs-tg.py", line 62, in main
+    load_balancers = get_load_balancers(cluster_arn)
+  File "C:\Users\ux186612\Documents\ecs-tg.py", line 26, in get_load_balancers
+    load_balancer = elbv2_client.describe_load_balancers(LoadBalancerArns=[lb_arn['targetGroupArn']])
+  File "C:\Program Files\Python310\lib\site-packages\botocore\client.py", line 553, in _api_call
+    return self._make_api_call(operation_name, kwargs)
+  File "C:\Program Files\Python310\lib\site-packages\botocore\client.py", line 1009, in _make_api_call
+    raise error_class(parsed_response, operation_name)
+botocore.exceptions.ClientError: An error occurred (ValidationError) when calling the DescribeLoadBalancers operation: 'arn:aws:elasticloadbalancing:us-east-1:866316499622:targetgroup/dsk-rt-ECSAp-W4U0SQL81FBO/eb143e4c99be2767' is not a valid load balancer ARN
