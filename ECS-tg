@@ -22,6 +22,8 @@ def get_ecs_target_group_request_count(cluster_name, target_group_arn, region):
     end_time = datetime.utcnow()
     start_time = end_time - timedelta(hours=24)  # Fetch data for the last 24 hours
     
+    print(f"Retrieving metrics data for target group {target_group_arn} in cluster {cluster_name}...")
+    
     retry_count = 0
     max_retries = 5
     while retry_count < max_retries:
@@ -37,6 +39,7 @@ def get_ecs_target_group_request_count(cluster_name, target_group_arn, region):
             )
             datapoints = response.get('Datapoints', [])
             total_request_count = sum([datapoint['Sum'] for datapoint in datapoints])
+            print(f"Total request count for target group {target_group_arn} in cluster {cluster_name}: {total_request_count}")
             return total_request_count
         except cloudwatch_client.exceptions.ThrottlingException as e:
             print(f"Throttling error occurred: {e}")
@@ -60,10 +63,14 @@ def main():
             writer.writeheader()
 
             for region in regions:
+                print(f"Retrieving ECS clusters in region {region}...")
                 ecs_clusters = get_ecs_clusters(region)
+                print(f"ECS clusters in region {region}: {ecs_clusters}")
                 for cluster_arn in ecs_clusters:
                     cluster_name = cluster_arn.split('/')[-1]
+                    print(f"Retrieving target groups for cluster {cluster_name}...")
                     target_groups = get_ecs_target_groups(cluster_arn, region)
+                    print(f"Target groups for cluster {cluster_name}: {target_groups}")
                     for target_group_arn in target_groups:
                         total_requests = get_ecs_target_group_request_count(cluster_name, target_group_arn, region)
                         writer.writerow({
