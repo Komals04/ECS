@@ -27,18 +27,47 @@ def get_ecs_clusters():
     clusters = ecs_client.list_clusters()['clusterArns']
     return clusters
 
-def get_metrics(target_group_arn, start_time, end_time):
+def get_load_balancers(cluster_arn):
+    def _get_load_balancers_inner():
+        ecs_client = boto3.client('ecs')
+        services = ecs_client.list_services(cluster=cluster_arn)['serviceArns']
+        elbv2_client = boto3.client('elbv2')
+        load_balancers = []
+
+        for service_arn in services:
+            response = ecs_client.describe_services(cluster=cluster_arn, services=[service_arn])
+            service = response['services'][0]
+            for lb in service.get('loadBalancers', []):
+                if 'targetGroupArn' in lb:  # Check if targetGroupArn exists
+                    target_group_arn = lb['targetGroupArn']
+                    try:
+                        response = elbv2_client.describe_target_groups(TargetGroupArns=[target_group_arn])
+                        target_group_info = response.get('TargetGroups', [])
+                        if target_group_info:
+                            lb_arns = target_group_info[0].get('LoadBalancerArns', [])
+                            if lb_arns:
+                                load_balancers.append(lb_arns[0])
+                    except elbv2_client.exceptions.TargetGroupNotFoundException as e:
+                        print(f"Skipping load balancer due to missing target group: {e}")
+        return load_balancers
+
+    return call_with_retries(_get_load_balancers_inner)
+
+def get_load_balancer_details(load_balancer_arn):
+    elbv2_client = boto3.client('elbv2')
+    response = elbv2_client.describe_load_balancers(LoadBalancerArns=[load_balancer_arn])
+    load_balancer_details = response['LoadBalancers'][0]
+    return load_balancer_details
+
+def get_metrics(load_balancer_arn, start_time, end_time):
     cloudwatch_client = boto3.client('cloudwatch')
     response = cloudwatch_client.get_metric_statistics(
         Namespace='AWS/ApplicationELB',
         MetricName='Per AppELB, Per AZ, Per TG Metrics',
-        Dimensions=[
-            {'Name': 'TargetGroup', 'Value': target_group_arn},
-            {'Name': 'MetricName', 'Value': 'Total connection count'}
-        ],
+        Dimensions=[{'Name': 'LoadBalancer', 'Value': load_balancer_arn}],
         StartTime=start_time,
         EndTime=end_time,
-        Period=3600,  # 1 hour
+        Period=86400,  # 24 hours
         Statistics=['Sum']
     )
     datapoints = response.get('Datapoints', [])
@@ -49,7 +78,7 @@ def main():
     regions = ['us-east-1', 'us-east-2', 'us-west-2']
 
     # Prepare data for CSV
-    headers = ['Region', 'ECS Cluster Name', 'Load Balancer ARN', 'Target Group', 'Total Connections in 1hr']
+    headers = ['Region', 'ECS Cluster Name', 'Load Balancer ARN', 'Load Balancer Name', 'Total Connections in 24hrs']
     rows = []
 
     for region in regions:
@@ -63,24 +92,14 @@ def main():
             load_balancers = get_load_balancers(cluster_arn)
             print(f"Found {len(load_balancers)} load balancers for ECS cluster {cluster_name}")
 
-            for load_balancer_arn in load_balancers:
-                elbv2_client = boto3.client('elbv2')
-                response = elbv2_client.describe_listeners(LoadBalancerArn=load_balancer_arn)
-                listeners = response.get('Listeners', [])
-                
-                for listener in listeners:
-                    default_actions = listener.get('DefaultActions', [])
-                    for action in default_actions:
-                        if 'TargetGroupArn' in action:
-                            target_group_arn = action['TargetGroupArn']
-                            target_group_name = target_group_arn.split('/')[-1]
-                            total_connections = get_metrics(target_group_arn, datetime.utcnow() - timedelta(hours=1), datetime.utcnow())
-                            rows.append([region, cluster_name, load_balancer_arn, target_group_name, total_connections])
+            for lb_arn in load_balancers:
+                load_balancer_details = get_load_balancer_details(lb_arn)
+                request_count = get_metrics(lb_arn, datetime.utcnow() - timedelta(days=1), datetime.utcnow())
+                rows.append([region, cluster_name, lb_arn, load_balancer_details['LoadBalancerName'], request_count])
 
     filename = 'ecs_load_balancer_metrics.csv'
     write_to_csv(filename, headers, rows)
 
     print(f'Data saved to {filename}')
 
-if __name__ == "__main__":
-    main()
+if __name__ == "__
