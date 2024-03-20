@@ -16,17 +16,18 @@ def get_ecs_clusters(region):
     response = ecs_client.list_clusters()
     return response.get('clusterArns', [])
 
-def get_ecs_target_groups(cluster_arn):
+def get_ecs_target_groups(cluster_arn, region):
     """
     Retrieves a list of target groups associated with the specified ECS cluster.
     
     Args:
     - cluster_arn: ARN of the ECS cluster.
+    - region: AWS region
     
     Returns:
     - List of target group ARNs.
     """
-    ecs_client = boto3.client('ecs')
+    ecs_client = boto3.client('ecs', region_name=region)
     response = ecs_client.describe_clusters(clusters=[cluster_arn])
     return [tg['targetGroupArn'] for tg in response['clusters'][0]['attachments']]
 
@@ -104,7 +105,7 @@ def main():
                 ecs_clusters = get_ecs_clusters(region)
                 for cluster_arn in ecs_clusters:
                     cluster_name = cluster_arn.split('/')[-1]
-                    target_groups = get_ecs_target_groups(cluster_arn)
+                    target_groups = get_ecs_target_groups(cluster_arn, region)
                     for target_group_arn in target_groups:
                         total_requests = get_ecs_target_group_request_count(cluster_name, target_group_arn, region)
                         writer.writerow({
