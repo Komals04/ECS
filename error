@@ -1,26 +1,12 @@
-Retrieving load balancers for ECS cluster dkr-cluster-PROJ-PLAN-internal-blue in region us-east-1...
-Attempt 1 failed: An error occurred (TargetGroupNotFound) when calling the DescribeTargetGroups operation: One or more target groups not found
-Retrying in 1.0 seconds...
-Attempt 2 failed: An error occurred (TargetGroupNotFound) when calling the DescribeTargetGroups operation: One or more target groups not found
-Retrying in 2.0 seconds...
-Attempt 3 failed: An error occurred (TargetGroupNotFound) when calling the DescribeTargetGroups operation: One or more target groups not found
-Retrying in 4.0 seconds...
-Attempt 4 failed: An error occurred (TargetGroupNotFound) when calling the DescribeTargetGroups operation: One or more target groups not found
-Retrying in 8.0 seconds...
-Attempt 5 failed: An error occurred (TargetGroupNotFound) when calling the DescribeTargetGroups operation: One or more target groups not found
+Retrieving load balancers for ECS cluster mxr-cluster-CTOMXR-MXROAWSECS-external-blue in region us-west-2...
+Found 1 load balancers for ECS cluster mxr-cluster-CTOMXR-MXROAWSECS-external-blue
+Retrieving load balancers for ECS cluster mxr-cluster-CTOMXR-MXRAURWFWSECS-external-blue in region us-west-2...
+Found 1 load balancers for ECS cluster mxr-cluster-CTOMXR-MXRAURWFWSECS-external-blue
 Traceback (most recent call last):
-  File "C:\Users\ux186612\Documents\ecs-tg.py", line 98, in <module>
+  File "C:\Users\ux186612\Documents\ecs-tg.py", line 101, in <module>
     main()
-  File "C:\Users\ux186612\Documents\ecs-tg.py", line 85, in main
-    load_balancers = get_load_balancers(cluster_arn)
-  File "C:\Users\ux186612\Documents\ecs-tg.py", line 51, in get_load_balancers
-    return call_with_retries(_get_load_balancers_inner)
-  File "C:\Users\ux186612\Documents\ecs-tg.py", line 15, in call_with_retries
-    return func()
-  File "C:\Users\ux186612\Documents\ecs-tg.py", line 43, in _get_load_balancers_inner
-    response = elbv2_client.describe_target_groups(TargetGroupArns=[target_group_arn])
-  File "C:\Program Files\Python310\lib\site-packages\botocore\client.py", line 553, in _api_call
-    return self._make_api_call(operation_name, kwargs)
-  File "C:\Program Files\Python310\lib\site-packages\botocore\client.py", line 1009, in _make_api_call
-    raise error_class(parsed_response, operation_name)
-botocore.errorfactory.TargetGroupNotFoundException: An error occurred (TargetGroupNotFound) when calling the DescribeTargetGroups operation: One or more target groups not found
+  File "C:\Users\ux186612\Documents\ecs-tg.py", line 96, in main
+    write_to_csv(filename, headers, rows)
+  File "C:\Users\ux186612\Documents\ecs-tg.py", line 7, in write_to_csv
+    with open(filename, 'w', newline='') as csvfile:
+PermissionError: [Errno 13] Permission denied: 'ecs_load_balancer_metrics.csv'
