@@ -1,75 +1,50 @@
 import boto3
 import csv
 from datetime import datetime, timedelta
+import time
 
 def get_ecs_clusters(region):
-    """
-    Retrieves a list of ECS clusters in the specified region.
-    
-    Args:
-    - region: AWS region
-    
-    Returns:
-    - List of ECS cluster ARNs.
-    """
     ecs_client = boto3.client('ecs', region_name=region)
     response = ecs_client.list_clusters()
     return response.get('clusterArns', [])
 
 def get_ecs_target_groups(cluster_arn, region):
-    """
-    Retrieves a list of target groups associated with the specified ECS cluster.
-    
-    Args:
-    - cluster_arn: ARN of the ECS cluster.
-    - region: AWS region
-    
-    Returns:
-    - List of target group ARNs.
-    """
     elbv2_client = boto3.client('elbv2', region_name=region)
     response = elbv2_client.describe_target_groups()
     return [tg['TargetGroupArn'] for tg in response['TargetGroups'] if cluster_arn in tg.get('LoadBalancerArns', [])]
 
 def get_ecs_target_group_request_count(cluster_name, target_group_arn, region):
-    """
-    Retrieves the total request count per target group for ECS.
-    
-    Args:
-    - cluster_name: Name of the ECS cluster.
-    - target_group_arn: ARN of the target group associated with ECS service.
-    - region: AWS region
-    
-    Returns:
-    - Total request count for the target group.
-    """
     cloudwatch_client = boto3.client('cloudwatch', region_name=region)
     
-    # Define metric parameters
     metric_name = 'RequestCountPerTarget'
     namespace = 'AWS/ApplicationELB'
     period = 3600  # 1 hour
     end_time = datetime.utcnow()
     start_time = end_time - timedelta(hours=24)  # Fetch data for the last 24 hours
     
-    # Retrieve metric data
-    response = cloudwatch_client.get_metric_statistics(
-        Namespace=namespace,
-        MetricName=metric_name,
-        Dimensions=[{'Name': 'TargetGroup', 'Value': target_group_arn}],
-        StartTime=start_time,
-        EndTime=end_time,
-        Period=period,
-        Statistics=['Sum']
-    )
-    
-    print("CloudWatch response:", response)  # Print the CloudWatch response for debugging
-    
-    # Extract request count
-    datapoints = response.get('Datapoints', [])
-    total_request_count = sum([datapoint['Sum'] for datapoint in datapoints])
-    
-    return total_request_count
+    retry_count = 0
+    max_retries = 5
+    while retry_count < max_retries:
+        try:
+            response = cloudwatch_client.get_metric_statistics(
+                Namespace=namespace,
+                MetricName=metric_name,
+                Dimensions=[{'Name': 'TargetGroup', 'Value': target_group_arn}],
+                StartTime=start_time,
+                EndTime=end_time,
+                Period=period,
+                Statistics=['Sum']
+            )
+            datapoints = response.get('Datapoints', [])
+            total_request_count = sum([datapoint['Sum'] for datapoint in datapoints])
+            return total_request_count
+        except cloudwatch_client.exceptions.ThrottlingException as e:
+            print(f"Throttling error occurred: {e}")
+            backoff_time = 2 ** retry_count  # Exponential backoff
+            print(f"Retrying in {backoff_time} seconds...")
+            time.sleep(backoff_time)
+            retry_count += 1
+    return 0
 
 def main():
     try:
