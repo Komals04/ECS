@@ -1,9 +1,14 @@
 C:\Users\ux186612\Documents>python ecs-tg.py
 Processing region us-east-1...
 Retrieving load balancers for ECS cluster did-cluster-ODC-METRICSSSSRDSECS-internal in region us-east-1...
+Found 0 load balancers for ECS cluster did-cluster-ODC-METRICSSSSRDSECS-internal
+Retrieving load balancers for ECS cluster dsk-cluster-DEPENDENCYSIMULATOR-EFUGXEM-internal-blue in region us-east-1...
+Found 1 load balancers for ECS cluster dsk-cluster-DEPENDENCYSIMULATOR-EFUGXEM-internal-blue
 Traceback (most recent call last):
-  File "C:\Users\ux186612\Documents\ecs-tg.py", line 87, in <module>
+  File "C:\Users\ux186612\Documents\ecs-tg.py", line 103, in <module>
     main()
-  File "C:\Users\ux186612\Documents\ecs-tg.py", line 72, in main
-    target_groups = get_load_balancers(cluster_arn)
-NameError: name 'get_load_balancers' is not defined. Did you mean: 'get_load_balancer_name'?
+  File "C:\Users\ux186612\Documents\ecs-tg.py", line 90, in main
+    target_group_arns = [listener['DefaultActions'][0]['TargetGroupArn'] for listener in response['Listeners']]
+  File "C:\Users\ux186612\Documents\ecs-tg.py", line 90, in <listcomp>
+    target_group_arns = [listener['DefaultActions'][0]['TargetGroupArn'] for listener in response['Listeners']]
+KeyError: 'TargetGroupArn'
