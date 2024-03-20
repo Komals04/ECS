@@ -1,111 +1,76 @@
 import boto3
 import csv
 from datetime import datetime, timedelta
-import time
 
-def get_ecs_clusters(region):
-    ecs_client = boto3.client('ecs', region_name=region)
-    clusters = []
-    next_token = None
-    while True:
-        response = ecs_client.list_clusters(nextToken=next_token)
-        clusters.extend(response.get('clusterArns', []))
-        next_token = response.get('nextToken')
-        if not next_token:
-            break
+def write_to_csv(filename, headers, rows):
+    with open(filename, 'w', newline='') as csvfile:
+        writer = csv.writer(csvfile)
+        writer.writerow(headers)
+        writer.writerows(rows)
+
+def get_ecs_clusters():
+    ecs_client = boto3.client('ecs')
+    clusters = ecs_client.list_clusters()['clusterArns']
     return clusters
 
-def get_ecs_target_groups(cluster_arn, region):
-    elbv2_client = boto3.client('elbv2', region_name=region)
-    target_groups = []
-    next_marker = None
-    while True:
-        try:
-            if next_marker:
-                response = elbv2_client.describe_target_groups(Marker=next_marker)
-            else:
-                response = elbv2_client.describe_target_groups()
-            
-            target_groups.extend([tg['TargetGroupArn'] for tg in response['TargetGroups'] if cluster_arn in tg.get('LoadBalancerArns', [])])
-            next_marker = response.get('NextMarker')
-            if not next_marker:
-                break
-        except elbv2_client.exceptions.ClientError as e:
-            print(f"An error occurred while retrieving target groups: {e}")
-            break
-    return target_groups
+def get_load_balancers(cluster_arn):
+    ecs_client = boto3.client('ecs')
+    services = ecs_client.list_services(cluster=cluster_arn)['serviceArns']
+    elbv2_client = boto3.client('elbv2')
+    load_balancers = []
 
-def get_ecs_target_group_request_count(cluster_name, target_group_arn, region):
-    cloudwatch_client = boto3.client('cloudwatch', region_name=region)
-    
-    metric_name = 'RequestCountPerTarget'
-    namespace = 'AWS/ApplicationELB'
-    period = 3600  # 1 hour
-    end_time = datetime.utcnow()
-    start_time = end_time - timedelta(hours=24)  # Fetch data for the last 24 hours
-    
-    print(f"Retrieving metrics data for target group {target_group_arn} in cluster {cluster_name}...")
-    
-    retry_count = 0
-    max_retries = 5
-    while retry_count < max_retries:
-        try:
-            response = cloudwatch_client.get_metric_statistics(
-                Namespace=namespace,
-                MetricName=metric_name,
-                Dimensions=[{'Name': 'TargetGroup', 'Value': target_group_arn}],
-                StartTime=start_time,
-                EndTime=end_time,
-                Period=period,
-                Statistics=['Sum']
-            )
-            datapoints = response.get('Datapoints', [])
-            total_request_count = sum([datapoint['Sum'] for datapoint in datapoints])
-            print(f"Total request count for target group {target_group_arn} in cluster {cluster_name}: {total_request_count}")
-            return total_request_count
-        except cloudwatch_client.exceptions.ThrottlingException as e:
-            print(f"Throttling error occurred: {e}")
-            backoff_time = 2 ** retry_count  # Exponential backoff
-            print(f"Retrying in {backoff_time} seconds...")
-            time.sleep(backoff_time)
-            retry_count += 1
-    return 0
+    for service_arn in services:
+        response = ecs_client.describe_services(cluster=cluster_arn, services=[service_arn])
+        service = response['services'][0]
+        for lb_arn in service.get('loadBalancers', []):
+            load_balancer = elbv2_client.describe_load_balancers(LoadBalancerArns=[lb_arn['targetGroupArn']])
+            load_balancers.append(load_balancer['LoadBalancers'][0])
+
+    return load_balancers
+
+def get_metrics(load_balancer_arn, start_time, end_time):
+    cloudwatch_client = boto3.client('cloudwatch')
+    response = cloudwatch_client.get_metric_statistics(
+        Namespace='AWS/ApplicationELB',
+        MetricName='RequestCountPerTarget',
+        Dimensions=[{'Name': 'LoadBalancer', 'Value': load_balancer_arn}],
+        StartTime=start_time,
+        EndTime=end_time,
+        Period=86400,  # 24 hours
+        Statistics=['Sum']
+    )
+    if 'Datapoints' in response:
+        return response['Datapoints'][0]['Sum']
+    else:
+        return 0
 
 def main():
-    try:
-        regions = ['us-east-1', 'us-east-2', 'us-west-2']  # Hardcoded regions
+    regions = ['us-east-1', 'us-east-2', 'us-west-2']
 
-        timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
-        csv_file = f'ecs_target_group_requests_{timestamp}.csv'  # CSV file for ECS target group requests
+    # Prepare data for CSV
+    headers = ['Region', 'ECS Cluster Name', 'Load Balancer ARN', 'Total Request Count in 24hrs']
+    rows = []
 
-        fieldnames = ['Region', 'Cluster Name', 'Target Group ARN', 'Total Requests']
+    for region in regions:
+        print(f"Processing region {region}...")
+        boto3.setup_default_session(region_name=region)
+        clusters = get_ecs_clusters()
 
-        with open(csv_file, 'w', newline='') as csvfile:
-            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-            writer.writeheader()
+        for cluster_arn in clusters:
+            cluster_name = cluster_arn.split('/')[-1]
+            print(f"Retrieving load balancers for ECS cluster {cluster_name} in region {region}...")
+            load_balancers = get_load_balancers(cluster_arn)
+            print(f"Found {len(load_balancers)} load balancers for ECS cluster {cluster_name}")
 
-            for region in regions:
-                print(f"Retrieving ECS clusters in region {region}...")
-                ecs_clusters = get_ecs_clusters(region)
-                print(f"ECS clusters in region {region}: {ecs_clusters}")
-                for cluster_arn in ecs_clusters:
-                    cluster_name = cluster_arn.split('/')[-1]
-                    print(f"Retrieving target groups for cluster {cluster_name}...")
-                    target_groups = get_ecs_target_groups(cluster_arn, region)
-                    print(f"Target groups for cluster {cluster_name}: {target_groups}")
-                    for target_group_arn in target_groups:
-                        total_requests = get_ecs_target_group_request_count(cluster_name, target_group_arn, region)
-                        print(f"Writing data to CSV file: {region}, {cluster_name}, {target_group_arn}, {total_requests}")
-                        writer.writerow({
-                            'Region': region,
-                            'Cluster Name': cluster_name,
-                            'Target Group ARN': target_group_arn,
-                            'Total Requests': total_requests
-                        })
+            for lb in load_balancers:
+                lb_arn = lb['LoadBalancerArn']
+                request_count = get_metrics(lb_arn, datetime.utcnow() - timedelta(days=1), datetime.utcnow())
+                rows.append([region, cluster_name, lb_arn, request_count])
 
-        print(f'Data saved to {csv_file}')
-    except Exception as e:
-        print(f"An error occurred: {e}")
+    filename = 'ecs_load_balancer_metrics.csv'
+    write_to_csv(filename, headers, rows)
+
+    print(f'Data saved to {filename}')
 
 if __name__ == "__main__":
     main()
