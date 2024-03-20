@@ -27,9 +27,9 @@ def get_ecs_target_groups(cluster_arn, region):
     Returns:
     - List of target group ARNs.
     """
-    ecs_client = boto3.client('ecs', region_name=region)
-    response = ecs_client.describe_clusters(clusters=[cluster_arn])
-    return [tg['targetGroupArn'] for tg in response['clusters'][0]['attachments']]
+    elbv2_client = boto3.client('elbv2', region_name=region)
+    response = elbv2_client.describe_target_groups()
+    return [tg['TargetGroupArn'] for tg in response['TargetGroups'] if cluster_arn in tg.get('LoadBalancerArns', [])]
 
 def get_ecs_target_group_request_count(cluster_name, target_group_arn, region):
     """
