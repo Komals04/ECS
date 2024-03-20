@@ -5,13 +5,27 @@ import time
 
 def get_ecs_clusters(region):
     ecs_client = boto3.client('ecs', region_name=region)
-    response = ecs_client.list_clusters()
-    return response.get('clusterArns', [])
+    clusters = []
+    next_token = None
+    while True:
+        response = ecs_client.list_clusters(nextToken=next_token)
+        clusters.extend(response.get('clusterArns', []))
+        next_token = response.get('nextToken')
+        if not next_token:
+            break
+    return clusters
 
 def get_ecs_target_groups(cluster_arn, region):
     elbv2_client = boto3.client('elbv2', region_name=region)
-    response = elbv2_client.describe_target_groups()
-    return [tg['TargetGroupArn'] for tg in response['TargetGroups'] if cluster_arn in tg.get('LoadBalancerArns', [])]
+    target_groups = []
+    next_marker = None
+    while True:
+        response = elbv2_client.describe_target_groups(Marker=next_marker)
+        target_groups.extend([tg['TargetGroupArn'] for tg in response['TargetGroups'] if cluster_arn in tg.get('LoadBalancerArns', [])])
+        next_marker = response.get('NextMarker')
+        if not next_marker:
+            break
+    return target_groups
 
 def get_ecs_target_group_request_count(cluster_name, target_group_arn, region):
     cloudwatch_client = boto3.client('cloudwatch', region_name=region)
@@ -73,6 +87,7 @@ def main():
                     print(f"Target groups for cluster {cluster_name}: {target_groups}")
                     for target_group_arn in target_groups:
                         total_requests = get_ecs_target_group_request_count(cluster_name, target_group_arn, region)
+                        print(f"Writing data to CSV file: {region}, {cluster_name}, {target_group_arn}, {total_requests}")
                         writer.writerow({
                             'Region': region,
                             'Cluster Name': cluster_name,
