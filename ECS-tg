@@ -26,8 +26,9 @@ def get_load_balancers(cluster_arn):
             if 'targetGroupArn' in lb:  # Check if targetGroupArn exists
                 target_group_arn = lb['targetGroupArn']
                 response = elbv2_client.describe_target_groups(TargetGroupArns=[target_group_arn])
-                target_group_info = response['TargetGroups'][0]
-                load_balancers.append(target_group_info['LoadBalancerArns'][0])
+                target_group_info = response.get('TargetGroups', [])
+                if target_group_info:
+                    load_balancers.append(target_group_info[0]['LoadBalancerArns'][0])
 
     return load_balancers
 
