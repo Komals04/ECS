@@ -1,13 +1,11 @@
-Processing region us-east-1...
-Retrieving load balancers for ECS cluster did-cluster-ODC-METRICSSSSRDSECS-internal in region us-east-1...
-Found 0 load balancers for ECS cluster did-cluster-ODC-METRICSSSSRDSECS-internal
-Retrieving load balancers for ECS cluster dsk-cluster-DEPENDENCYSIMULATOR-EFUGXEM-internal-blue in region us-east-1...
-Found 1 load balancers for ECS cluster dsk-cluster-DEPENDENCYSIMULATOR-EFUGXEM-internal-blue
+Retrieving load balancers for ECS cluster APY-faas-antiphony-api-eng in region us-east-1...
+Found 1 load balancers for ECS cluster APY-faas-antiphony-api-eng
+Retrieving load balancers for ECS cluster dkr-cluster-CCTECS-WEBJAVA11V350-internal-green in region us-east-1...
 Traceback (most recent call last):
-  File "C:\Users\ux186612\Documents\ecs-tg.py", line 78, in <module>
+  File "C:\Users\ux186612\Documents\ecs-tg.py", line 79, in <module>
     main()
-  File "C:\Users\ux186612\Documents\ecs-tg.py", line 69, in main
-    request_count = get_metrics(lb_arn, datetime.utcnow() - timedelta(days=1), datetime.utcnow())
-  File "C:\Users\ux186612\Documents\ecs-tg.py", line 46, in get_metrics
-    return response['Datapoints'][0]['Sum']
+  File "C:\Users\ux186612\Documents\ecs-tg.py", line 66, in main
+    load_balancers = get_load_balancers(cluster_arn)
+  File "C:\Users\ux186612\Documents\ecs-tg.py", line 30, in get_load_balancers
+    load_balancers.append(target_group_info['LoadBalancerArns'][0])
 IndexError: list index out of range
