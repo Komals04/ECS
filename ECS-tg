@@ -87,25 +87,36 @@ def get_ecs_target_group_request_count(cluster_name, target_group_arn, region):
     else:
         return 0  # No data available
 
-# Define regions
-regions = ['us-east-1', 'us-east-2', 'us-west-2']
+def main():
+    try:
+        regions = ['us-east-1', 'us-east-2', 'us-west-2']  # Hardcoded regions
 
-# Prepare data for CSV
-csv_data = [['Region', 'Cluster Name', 'Target Group ARN', 'Total Requests']]
+        timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+        csv_file = f'ecs_target_group_requests_{timestamp}.csv'  # CSV file for ECS target group requests
 
-for region in regions:
-    ecs_clusters = get_ecs_clusters(region)
-    for cluster_arn in ecs_clusters:
-        cluster_name = cluster_arn.split('/')[-1]
-        target_groups = get_ecs_target_groups(cluster_arn)
-        for target_group_arn in target_groups:
-            total_requests = get_ecs_target_group_request_count(cluster_name, target_group_arn, region)
-            csv_data.append([region, cluster_name, target_group_arn, total_requests])
+        fieldnames = ['Region', 'Cluster Name', 'Target Group ARN', 'Total Requests']
 
-# Write data to CSV file
-csv_file = 'ecs_target_group_requests.csv'
-with open(csv_file, 'w', newline='') as file:
-    writer = csv.writer(file)
-    writer.writerows(csv_data)
+        with open(csv_file, 'w', newline='') as csvfile:
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            writer.writeheader()
 
-print(f'Data saved to {csv_file}')
+            for region in regions:
+                ecs_clusters = get_ecs_clusters(region)
+                for cluster_arn in ecs_clusters:
+                    cluster_name = cluster_arn.split('/')[-1]
+                    target_groups = get_ecs_target_groups(cluster_arn)
+                    for target_group_arn in target_groups:
+                        total_requests = get_ecs_target_group_request_count(cluster_name, target_group_arn, region)
+                        writer.writerow({
+                            'Region': region,
+                            'Cluster Name': cluster_name,
+                            'Target Group ARN': target_group_arn,
+                            'Total Requests': total_requests
+                        })
+
+        print(f'Data saved to {csv_file}')
+    except Exception as e:
+        print(f"An error occurred: {e}")
+
+if __name__ == "__main__":
+    main()
