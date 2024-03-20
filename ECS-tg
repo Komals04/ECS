@@ -42,8 +42,9 @@ def get_metrics(load_balancer_arn, start_time, end_time):
         Period=86400,  # 24 hours
         Statistics=['Sum']
     )
-    if 'Datapoints' in response:
-        return response['Datapoints'][0]['Sum']
+    datapoints = response.get('Datapoints', [])
+    if datapoints:
+        return datapoints[0]['Sum']
     else:
         return 0
 
