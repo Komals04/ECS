@@ -20,10 +20,18 @@ def get_ecs_target_groups(cluster_arn, region):
     target_groups = []
     next_marker = None
     while True:
-        response = elbv2_client.describe_target_groups(Marker=next_marker)
-        target_groups.extend([tg['TargetGroupArn'] for tg in response['TargetGroups'] if cluster_arn in tg.get('LoadBalancerArns', [])])
-        next_marker = response.get('NextMarker')
-        if not next_marker:
+        try:
+            if next_marker:
+                response = elbv2_client.describe_target_groups(Marker=next_marker)
+            else:
+                response = elbv2_client.describe_target_groups()
+            
+            target_groups.extend([tg['TargetGroupArn'] for tg in response['TargetGroups'] if cluster_arn in tg.get('LoadBalancerArns', [])])
+            next_marker = response.get('NextMarker')
+            if not next_marker:
+                break
+        except elbv2_client.exceptions.ClientError as e:
+            print(f"An error occurred while retrieving target groups: {e}")
             break
     return target_groups
 
