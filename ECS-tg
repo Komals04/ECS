@@ -22,9 +22,11 @@ def get_load_balancers(cluster_arn):
     for service_arn in services:
         response = ecs_client.describe_services(cluster=cluster_arn, services=[service_arn])
         service = response['services'][0]
-        for lb_arn in service.get('loadBalancers', []):
-            load_balancer = elbv2_client.describe_load_balancers(LoadBalancerArns=[lb_arn['targetGroupArn']])
-            load_balancers.append(load_balancer['LoadBalancers'][0])
+        for lb in service.get('loadBalancers', []):
+            target_group_arn = lb['targetGroupArn']
+            response = elbv2_client.describe_target_groups(TargetGroupArns=[target_group_arn])
+            target_group_info = response['TargetGroups'][0]
+            load_balancers.append(target_group_info['LoadBalancerArns'][0])
 
     return load_balancers
 
@@ -62,8 +64,7 @@ def main():
             load_balancers = get_load_balancers(cluster_arn)
             print(f"Found {len(load_balancers)} load balancers for ECS cluster {cluster_name}")
 
-            for lb in load_balancers:
-                lb_arn = lb['LoadBalancerArn']
+            for lb_arn in load_balancers:
                 request_count = get_metrics(lb_arn, datetime.utcnow() - timedelta(days=1), datetime.utcnow())
                 rows.append([region, cluster_name, lb_arn, request_count])
 
