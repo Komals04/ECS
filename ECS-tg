@@ -80,6 +80,8 @@ def get_ecs_target_group_request_count(cluster_name, target_group_arn, region):
         EndTime=datetime.utcnow(),
     )
     
+    print("CloudWatch response:", response)  # Print the CloudWatch response for debugging
+    
     # Extract request count
     if 'Datapoints' in response['MetricDataResults'][0]:
         datapoints = response['MetricDataResults'][0]['Datapoints']
@@ -103,14 +105,11 @@ def main():
 
             for region in regions:
                 ecs_clusters = get_ecs_clusters(region)
-                print(f"Found ECS clusters in {region}: {ecs_clusters}")
                 for cluster_arn in ecs_clusters:
                     cluster_name = cluster_arn.split('/')[-1]
                     target_groups = get_ecs_target_groups(cluster_arn, region)
-                    print(f"Found target groups for cluster {cluster_name}: {target_groups}")
                     for target_group_arn in target_groups:
                         total_requests = get_ecs_target_group_request_count(cluster_name, target_group_arn, region)
-                        print(f"Total requests for target group {target_group_arn} in cluster {cluster_name}: {total_requests}")
                         writer.writerow({
                             'Region': region,
                             'Cluster Name': cluster_name,
