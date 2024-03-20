@@ -81,8 +81,9 @@ def main():
             print(f"Found {len(target_groups)} target groups for ECS cluster {cluster_name}")
 
             for target_group_arn in target_groups:
+                target_group_name = target_group_arn.split('/')[-1]
                 total_connections = get_metrics(target_group_arn, datetime.utcnow() - timedelta(hours=1), datetime.utcnow())
-                rows.append([region, cluster_name, target_group_arn, total_connections])
+                rows.append([region, cluster_name, target_group_name, total_connections])
 
     filename = 'ecs_load_balancer_metrics.csv'
     write_to_csv(filename, headers, rows)
