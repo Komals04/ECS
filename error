@@ -1,12 +1,9 @@
-Retrieving load balancers for ECS cluster mxr-cluster-CTOMXR-MXROAWSECS-external-blue in region us-west-2...
-Found 1 load balancers for ECS cluster mxr-cluster-CTOMXR-MXROAWSECS-external-blue
-Retrieving load balancers for ECS cluster mxr-cluster-CTOMXR-MXRAURWFWSECS-external-blue in region us-west-2...
-Found 1 load balancers for ECS cluster mxr-cluster-CTOMXR-MXRAURWFWSECS-external-blue
+C:\Users\ux186612\Documents>python ecs-tg.py
+Processing region us-east-1...
+Retrieving load balancers for ECS cluster did-cluster-ODC-METRICSSSSRDSECS-internal in region us-east-1...
 Traceback (most recent call last):
-  File "C:\Users\ux186612\Documents\ecs-tg.py", line 101, in <module>
+  File "C:\Users\ux186612\Documents\ecs-tg.py", line 87, in <module>
     main()
-  File "C:\Users\ux186612\Documents\ecs-tg.py", line 96, in main
-    write_to_csv(filename, headers, rows)
-  File "C:\Users\ux186612\Documents\ecs-tg.py", line 7, in write_to_csv
-    with open(filename, 'w', newline='') as csvfile:
-PermissionError: [Errno 13] Permission denied: 'ecs_load_balancer_metrics.csv'
+  File "C:\Users\ux186612\Documents\ecs-tg.py", line 72, in main
+    target_groups = get_load_balancers(cluster_arn)
+NameError: name 'get_load_balancers' is not defined. Did you mean: 'get_load_balancer_name'?
