@@ -1,145 +1,84 @@
 import boto3
 import csv
-from datetime import datetime
+from datetime import datetime, timedelta
 
-def describe_capacity_providers(ecs_client):
-    response = ecs_client.describe_capacity_providers()
-    return response['capacityProviders']
+def get_target_response_time(cw_client, target_group_arn):
+    try:
+        end_time = datetime.now()
+        start_time = end_time - timedelta(hours=3)
 
-def describe_clusters(ecs_client):
-    response = ecs_client.describe_clusters()
-    return response['clusters']
+        response = cw_client.get_metric_statistics(
+            Namespace='AWS/ApplicationELB',
+            MetricName='TargetResponseTime',
+            Dimensions=[{'Name': 'TargetGroup', 'Value': target_group_arn}],
+            StartTime=start_time,
+            EndTime=end_time,
+            Period=300,  # 5-minute interval
+            Statistics=['Average'],
+            Unit='Seconds'
+        )
 
-def describe_container_instances(ecs_client, cluster):
-    response = ecs_client.describe_container_instances(cluster=cluster)
-    return response['containerInstances']
+        if 'Datapoints' in response:
+            # Sort the datapoints by timestamp and get the latest value
+            datapoints = sorted(response['Datapoints'], key=lambda x: x['Timestamp'], reverse=True)
+            return datapoints[0]['Average']
+        else:
+            return 'N/A'  # If no datapoints found
 
-def describe_services(ecs_client, cluster):
-    response = ecs_client.describe_services(cluster=cluster)
-    return response['services']
+    except Exception as e:
+        print(f"Error retrieving TargetResponseTime: {e}")
+        return 'N/A'
 
-def describe_task_definition(ecs_client, task_definition):
-    response = ecs_client.describe_task_definition(taskDefinition=task_definition)
-    return response['taskDefinition']
+def get_load_balancers(ecs_client, cw_client):
+    try:
+        response = ecs_client.list_clusters()
+        clusters = response['clusterArns']
 
-def describe_task_sets(ecs_client, cluster, service):
-    response = ecs_client.describe_task_sets(cluster=cluster, service=service)
-    return response['taskSets']
+        lb_details = []
 
-def describe_tasks(ecs_client, cluster):
-    response = ecs_client.describe_tasks(cluster=cluster)
-    return response['tasks']
+        for cluster_arn in clusters:
+            response = ecs_client.list_services(cluster=cluster_arn)
+            services = response['serviceArns']
 
-def list_account_settings(ecs_client):
-    response = ecs_client.list_account_settings()
-    return response['settings']
+            for service_arn in services:
+                response = ecs_client.describe_services(cluster=cluster_arn, services=[service_arn])
+                load_balancers = response['services'][0].get('loadBalancers', [])
 
-def list_attributes(ecs_client):
-    response = ecs_client.list_attributes()
-    return response['attributes']
+                for lb in load_balancers:
+                    if lb['targetGroupArn']:
+                        target_group_arn = lb['targetGroupArn']
+                        response_time = get_target_response_time(cw_client, target_group_arn)
 
-def list_clusters(ecs_client):
-    response = ecs_client.list_clusters()
-    return response['clusterArns']
+                        lb_details.append({
+                            'ClusterName': cluster_arn.split('/')[-1],
+                            'LoadBalancerArn': lb['targetGroupArn'],
+                            'ResponseTime': response_time
+                        })
 
-def list_container_instances(ecs_client, cluster):
-    response = ecs_client.list_container_instances(cluster=cluster)
-    return response['containerInstanceArns']
+        return lb_details
 
-def list_services(ecs_client, cluster):
-    response = ecs_client.list_services(cluster=cluster)
-    return response['serviceArns']
+    except Exception as e:
+        print(f"Error retrieving load balancers: {e}")
+        return []
 
-def list_services_by_namespace(ecs_client, namespace):
-    response = ecs_client.list_services_by_namespace(namespace=namespace)
-    return response['serviceArns']
+def export_to_csv(data, filename):
+    if not data:
+        print("No data to export.")
+        return
 
-def list_tags_for_resource(ecs_client, resource_arn):
-    response = ecs_client.list_tags_for_resource(resourceArn=resource_arn)
-    return response['tags']
+    fieldnames = ['ClusterName', 'LoadBalancerArn', 'ResponseTime']
 
-def list_task_definition_families(ecs_client):
-    response = ecs_client.list_task_definition_families()
-    return response['families']
-
-def list_task_definitions(ecs_client, family_prefix=None):
-    response = ecs_client.list_task_definitions(familyPrefix=family_prefix)
-    return response['taskDefinitionArns']
-
-def list_tasks(ecs_client, cluster):
-    response = ecs_client.list_tasks(cluster=cluster)
-    return response['taskArns']
-
-def write_to_csv(filename, data):
-    fieldnames = list(data[0].keys())
     with open(filename, 'w', newline='') as csvfile:
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         writer.writeheader()
         for row in data:
             writer.writerow(row)
 
-def main():
-    ecs_client = boto3.client('ecs')
-
-    # Fetch ECS insights
-    clusters = describe_clusters(ecs_client)
-    container_instances = describe_container_instances(ecs_client, clusters[0]['clusterName'])
-    services = describe_services(ecs_client, clusters[0]['clusterName'])
-    task_definitions = list_task_definitions(ecs_client)
-    tasks = describe_tasks(ecs_client, clusters[0]['clusterName'])
-
-    # Prepare data for CSV
-    ecs_insights = []
-    for cluster in clusters:
-        cluster_insight = {
-            'ClusterName': cluster['clusterName'],
-            'Status': cluster['status'],
-            'RegisteredContainerInstancesCount': cluster['registeredContainerInstancesCount'],
-            'RunningTasksCount': cluster['runningTasksCount'],
-            'PendingTasksCount': cluster['pendingTasksCount'],
-        }
-        ecs_insights.append(cluster_insight)
-
-    for instance in container_instances:
-        instance_insight = {
-            'ContainerInstanceArn': instance['containerInstanceArn'],
-            'Status': instance['status'],
-            'RunningTasksCount': instance['runningTasksCount'],
-        }
-        ecs_insights.append(instance_insight)
-
-    for service in services:
-        service_insight = {
-            'ServiceName': service['serviceName'],
-            'Status': service['status'],
-            'RunningCount': service['runningCount'],
-            'PendingCount': service['pendingCount'],
-        }
-        ecs_insights.append(service_insight)
-
-    for task_definition_arn in task_definitions:
-        task_definition = describe_task_definition(ecs_client, task_definition_arn)
-        task_definition_insight = {
-            'TaskDefinitionArn': task_definition['taskDefinitionArn'],
-            'Family': task_definition['family'],
-            'Status': task_definition['status'],
-        }
-        ecs_insights.append(task_definition_insight)
-
-    for task in tasks:
-        task_insight = {
-            'TaskArn': task['taskArn'],
-            'Family': task['taskDefinitionArn'].split('/')[-1],
-            'ClusterName': clusters[0]['clusterName'],
-            'Status': task['lastStatus'],
-        }
-        ecs_insights.append(task_insight)
-
-    # Write ECS insights to CSV
-    timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
-    filename = f'ecs_insights_{timestamp}.csv'
-    write_to_csv(filename, ecs_insights)
-    print(f'ECS insights exported to {filename}')
-
 if __name__ == "__main__":
-    main()
+    ecs_client = boto3.client('ecs')
+    cw_client = boto3.client('cloudwatch')
+
+    lb_details = get_load_balancers(ecs_client, cw_client)
+
+    # Replace 'lb_details.csv' with your desired filename
+    export_to_csv(lb_details, 'lb_details.csv')
