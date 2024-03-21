@@ -1,53 +1,12 @@
 import boto3
 import csv
 from datetime import datetime, timedelta
-import time
 
-def write_to_csv(filename, headers, rows):
-    with open(filename, 'w', newline='') as csvfile:
-        writer = csv.writer(csvfile)
-        writer.writerow(headers)
-        writer.writerows(rows)
-
-def call_with_retries(func, max_retries=5):
-    for attempt in range(1, max_retries + 1):
-        try:
-            return func()
-        except Exception as e:
-            print(f"Attempt {attempt} failed: {e}")
-            if attempt == max_retries:
-                raise
-            else:
-                wait_time = (2 ** attempt) * 0.5  # Exponential backoff with jitter
-                print(f"Retrying in {wait_time} seconds...")
-                time.sleep(wait_time)
-
-def get_ecs_clusters():
-    ecs_client = boto3.client('ecs')
-    clusters = ecs_client.list_clusters()['clusterArns']
-    return clusters
-
-def get_load_balancers(cluster_arn):
-    def _get_load_balancers_inner():
-        ecs_client = boto3.client('ecs')
-        services = ecs_client.list_services(cluster=cluster_arn)['serviceArns']
-        load_balancers = []
-
-        for service_arn in services:
-            response = ecs_client.describe_services(cluster=cluster_arn, services=[service_arn])
-            service = response['services'][0]
-            for lb in service.get('loadBalancers', []):
-                if 'targetGroupArn' in lb:  # Check if targetGroupArn exists
-                    load_balancers.append(lb['targetGroupArn'])
-        return load_balancers
-
-    return call_with_retries(_get_load_balancers_inner)
-
-def get_metrics(load_balancer_arn, start_time, end_time, metric_name):
+def get_target_response_time(load_balancer_arn, start_time, end_time):
     cloudwatch_client = boto3.client('cloudwatch')
     response = cloudwatch_client.get_metric_statistics(
         Namespace='AWS/ApplicationELB',
-        MetricName=metric_name,
+        MetricName='TargetResponseTime',
         Dimensions=[
             {'Name': 'LoadBalancer', 'Value': load_balancer_arn},
         ],
@@ -62,32 +21,33 @@ def get_metrics(load_balancer_arn, start_time, end_time, metric_name):
     else:
         return 0
 
+def get_load_balancers(region):
+    elbv2_client = boto3.client('elbv2', region_name=region)
+    response = elbv2_client.describe_load_balancers()
+    load_balancers = response['LoadBalancers']
+    return [lb['LoadBalancerArn'] for lb in load_balancers]
+
+def write_to_csv(filename, data):
+    with open(filename, 'w', newline='') as csvfile:
+        writer = csv.writer(csvfile)
+        writer.writerow(['Load Balancer ARN', 'Target Response Time (seconds)'])
+        for lb_arn, response_time in data.items():
+            writer.writerow([lb_arn, response_time])
+
 def main():
     regions = ['us-east-1', 'us-east-2', 'us-west-2']
-    metric_name = 'TargetResponseTime'  # Set the metric name here
+    start_time = datetime.utcnow() - timedelta(hours=3)
+    end_time = datetime.utcnow()
 
-    # Prepare data for CSV
-    headers = ['Region', 'ECS Cluster Name', 'Load Balancer ARN', 'Response Time (ms)']
-    rows = []
-
+    all_load_balancers = {}
     for region in regions:
-        print(f"Processing region {region}...")
-        boto3.setup_default_session(region_name=region)
-        clusters = get_ecs_clusters()
+        load_balancers = get_load_balancers(region)
+        for lb_arn in load_balancers:
+            response_time = get_target_response_time(lb_arn, start_time, end_time)
+            all_load_balancers[lb_arn] = response_time
 
-        for cluster_arn in clusters:
-            cluster_name = cluster_arn.split('/')[-1]
-            print(f"Retrieving load balancers for ECS cluster {cluster_name} in region {region}...")
-            load_balancers = get_load_balancers(cluster_arn)
-            print(f"Found {len(load_balancers)} load balancers for ECS cluster {cluster_name}")
-
-            for lb_arn in load_balancers:
-                response_time = get_metrics(lb_arn, datetime.utcnow() - timedelta(hours=3), datetime.utcnow(), metric_name)
-                rows.append([region, cluster_name, lb_arn, response_time])
-
-    filename = 'ecs_load_balancer_response_time.csv'
-    write_to_csv(filename, headers, rows)
-
+    filename = 'load_balancer_response_times.csv'
+    write_to_csv(filename, all_load_balancers)
     print(f'Data saved to {filename}')
 
 if __name__ == "__main__":
