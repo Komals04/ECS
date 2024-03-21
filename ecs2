@@ -1,217 +1,65 @@
 import boto3
 import csv
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from botocore.config import Config
-import time
-import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 
-# Initialize logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+def get_ecs_clusters():
+    ecs_client = boto3.client('ecs')
+    clusters = ecs_client.list_clusters()['clusterArns']
+    return clusters
 
-# Define the AWS regions to operate in
-aws_regions = ['us-east-1', 'us-east-2', 'us-west-2']
+def get_ecs_services(cluster_arn):
+    ecs_client = boto3.client('ecs')
+    services = ecs_client.list_services(cluster=cluster_arn)['serviceArns']
+    return services
 
-# Define a Boto3 Config to customize the retry strategy
-boto3_config = Config(
-    retries={
-        'max_attempts': 10,
-        'mode': 'adaptive'
-    }
-)
+def get_task_definition(service_arn):
+    ecs_client = boto3.client('ecs')
+    service = ecs_client.describe_services(services=[service_arn])['services'][0]
+    task_definition_arn = service['taskDefinition']
+    task_definition = ecs_client.describe_task_definition(taskDefinition=task_definition_arn)
+    return task_definition
 
-def get_account_alias(iam_client):
-    try:
-        account_aliases = iam_client.list_account_aliases()['AccountAliases']
-        return account_aliases[0] if account_aliases else "No alias found"
-    except Exception as e:
-        logging.error(f"Error getting account alias: {e}")
-        return "Error"
-
-def get_ecs_service_tags(ecs_client, service_arn):
-    try:
-        tags_response = ecs_client.list_tags_for_resource(resourceArn=service_arn)
-        tags = {tag['key']: tag['value'] for tag in tags_response['tags']}
-        return tags
-    except Exception as e:
-        logging.error(f"Error getting ECS service tags: {e}")
-        return {}
-
-def get_load_balancer_request_count(cloudwatch_client, load_balancer_arn, start_time, end_time):
-    namespace = 'AWS/ApplicationELB' if ":loadbalancer/app/" in load_balancer_arn else 'AWS/NetworkELB'
-    dimension_value = load_balancer_arn.split('/app/')[-1]  # Extract the last part for Dimension value
-    metric_name = 'RequestCount'
-    statistic = 'Sum'
-    try:
-        metrics = cloudwatch_client.get_metric_statistics(
-            Namespace=namespace,
-            MetricName=metric_name,
-            Dimensions=[
-                {
-                    'Name': 'LoadBalancer', 
-                    'Value': f'app/{dimension_value}'
-                },    
-                    
-            ],
-            StartTime=start_time,
-            EndTime=end_time,
-            Period=86400,  # Summarize daily
-            Statistics=[statistic]
-        )
-        total_requests = sum(data_point[statistic] for data_point in metrics['Datapoints'])
-        return total_requests
-    except Exception as e:
-        logging.error(f"Error getting request count for load balancer {load_balancer_arn}: {e}")
-        return 0
-
-def get_target_group_request_count(cloudwatch_client, target_group_arn, start_time, end_time):
-    metric_name = 'RequestCountPerTarget'
-    statistic = 'Sum'
-    try:
-        metrics = cloudwatch_client.get_metric_statistics(
-            Namespace='AWS/ApplicationELB',
-            MetricName=metric_name,
-            Dimensions=[
-                {
-                    'Name': 'TargetGroup',
-                    'Value': target_group_arn
-                },
-            ],
-            StartTime=start_time,
-            EndTime=end_time,
-            Period=86400,  # Summarize daily
-            Statistics=[statistic]
-        )
-        total_requests = sum(data_point[statistic] for data_point in metrics['Datapoints'])
-        return total_requests
-    except Exception as e:
-        logging.error(f"Error getting request count for target group {target_group_arn}: {e}")
-        return 0
-
-def get_target_group_response_time(cloudwatch_client, target_group_arn, start_time, end_time):
-    metric_name = 'TargetResponseTime'
-    statistic = 'Average'
-    try:
-        metrics = cloudwatch_client.get_metric_statistics(
-            Namespace='AWS/ApplicationELB',
-            MetricName=metric_name,
-            Dimensions=[
-                {
-                    'Name': 'TargetGroup',
-                    'Value': target_group_arn
-                },
-            ],
-            StartTime=start_time,
-            EndTime=end_time,
-            Period=86400,  # Summarize daily
-            Statistics=[statistic]
-        )
-        response_time = sum(data_point[statistic] for data_point in metrics['Datapoints']) / len(metrics['Datapoints'])
-        return response_time
-    except Exception as e:
-        logging.error(f"Error getting response time for target group {target_group_arn}: {e}")
-        return 0
-
-def get_service_details(ecs_client, elbv2_client, cloudwatch_client, region, cluster_name, service_name):
-    service_details = {
-        'Region': region,
-        'ClusterName': cluster_name,
-        'AWSAccountName': '',
-        'LoadBalancerName': '',
-        'Application': '',
-        'SysLevel': '',
-        'RequestCountLast7Days': 0,
-        'TargetGroupRequestCountLast7Days': 0,
-        'TargetGroupResponseTimeLast7Days': 0
-    }
-
-    load_balancer_arn = None  
-    target_group_arn = None
-
-    try:
-        response = ecs_client.describe_services(cluster=cluster_name, services=[service_name])
-        if response['services']:
-            service = response['services'][0]
-            service_details['ServiceARN'] = service['serviceArn']
-            tags = get_ecs_service_tags(ecs_client, service['serviceArn'])
-            service_details.update({
-                'Application': tags.get('Application', ''),
-                'SysLevel': tags.get('SysLevel', '')
-            })
-            
-            if 'loadBalancers' in service and service['loadBalancers']:
-                target_group_arn = service['loadBalancers'][0].get('targetGroupArn', '')
-                if target_group_arn:
-                    tg_response = elbv2_client.describe_target_groups(TargetGroupArns=[target_group_arn])
-                    if tg_response['TargetGroups'] and tg_response['TargetGroups'][0].get('LoadBalancerArns'):
-                        load_balancer_arn = tg_response['TargetGroups'][0]['LoadBalancerArns'][0]
-
-    except Exception as e:
-        logging.error(f"Error getting service details for {service_name} in cluster {cluster_name}: {e}")
-
-    if load_balancer_arn:
-        now = datetime.utcnow()
-        start_time = now - timedelta(days=7)
-        end_time = now
-        request_count = get_load_balancer_request_count(cloudwatch_client, load_balancer_arn, start_time, end_time)
-        service_details['RequestCountLast7Days'] = request_count
-
-    if target_group_arn:
-        now = datetime.utcnow()
-        start_time = now - timedelta(days=7)
-        end_time = now
-        tg_request_count = get_target_group_request_count(cloudwatch_client, target_group_arn, start_time, end_time)
-        service_details['TargetGroupRequestCountLast7Days'] = tg_request_count
-
-        tg_response_time = get_target_group_response_time(cloudwatch_client, target_group_arn, start_time, end_time)
-        service_details['TargetGroupResponseTimeLast7Days'] = tg_response_time
-
-    return service_details
-
-def process_services(ecs_client, elbv2_client, cloudwatch_client, region, cluster_arn):
-    service_details_list = []
-    cluster_name = cluster_arn.split('/')[-1]
-    paginator = ecs_client.get_paginator('list_services')
-    for page in paginator.paginate(cluster=cluster_arn):
-        service_arns = page['serviceArns']
-        with ThreadPoolExecutor(max_workers=5) as executor:
-            futures = [executor.submit(get_service_details, ecs_client, elbv2_client, cloudwatch_client, region, cluster_name, service_arn.split('/')[-1]) for service_arn in service_arns]
-            for future in as_completed(futures):
-                service_details_list.append(future.result())
-                time.sleep(0.1)
-    return service_details_list
-
-def write_to_csv(data, filename='ecs_service_details_retail_eng.csv'):
-    fieldnames = ['AWSAccountName', 'Region', 'ClusterName', 'LoadBalancerName', 'Application', 'SysLevel', 'RequestCountLast7Days', 'TargetGroupRequestCountLast7Days', 'TargetGroupResponseTimeLast7Days', 'ServiceARN']
-    with open(filename, mode='w', newline='') as file:
-        writer = csv.DictWriter(file, fieldnames=fieldnames)
-        writer.writeheader()
-        for service_cluster in data:
-            for service_details in service_cluster:
-                writer.writerow(service_details)
+def get_load_balancer_names(task_definition):
+    load_balancers = []
+    for container_definition in task_definition['taskDefinition']['containerDefinitions']:
+        if 'loadBalancers' in container_definition:
+            for lb in container_definition['loadBalancers']:
+                load_balancers.append(lb['containerName'])
+    return load_balancers
 
 def main():
-    all_service_details = []
-    for region in aws_regions:
-        logging.info(f"Processing region: {region}")
-        ecs_client = boto3.client('ecs', region_name=region, config=boto3_config)
-        elbv2_client = boto3.client('elbv2', region_name=region, config=boto3_config)
-        cloudwatch_client = boto3.client('cloudwatch', region_name=region, config=boto3_config)
-        iam_client = boto3.client('iam', region_name=region, config=boto3_config)  # Not used but initialized for consistency
-        account_name = get_account_alias(iam_client)
-        
-        paginator = ecs_client.get_paginator('list_clusters')
-        for page in paginator.paginate():
-            cluster_arns = page['clusterArns']
-            with ThreadPoolExecutor(max_workers=3) as executor:
-                futures = [executor.submit(process_services, ecs_client, elbv2_client, cloudwatch_client, region, cluster_arn) for cluster_arn in cluster_arns]
-                for future in as_completed(futures):
-                    service_details = future.result()
-                    for detail in service_details:
-                        detail['AWSAccountName'] = account_name
-                    all_service_details.append(service_details)
-    write_to_csv(all_service_details)
-    logging.info("Details for all services across specified regions written to ecs_service_details_multi_region.csv")
+    try:
+        regions = ['us-east-1', 'us-east-2', 'us-west-2']
+
+        timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+        filename = f'ecs_load_balancers_{timestamp}.csv'
+
+        fieldnames = ['Cluster Name', 'Service Name', 'Load Balancer Name']
+
+        with open(filename, 'w', newline='') as csvfile:
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            writer.writeheader()
+
+            for region in regions:
+                boto3.setup_default_session(region_name=region)
+                clusters = get_ecs_clusters()
+
+                for cluster_arn in clusters:
+                    cluster_name = cluster_arn.split('/')[-1]
+                    services = get_ecs_services(cluster_arn)
+
+                    for service_arn in services:
+                        service_name = service_arn.split('/')[-1]
+                        task_definition = get_task_definition(service_arn)
+                        load_balancer_names = get_load_balancer_names(task_definition)
+
+                        for lb_name in load_balancer_names:
+                            writer.writerow({'Cluster Name': cluster_name, 'Service Name': service_name, 'Load Balancer Name': lb_name})
+                            print(f"Exported load balancer {lb_name} for service {service_name} in cluster {cluster_name} in region {region}")
+
+        print(f'Completed exporting ECS load balancers to {filename}.')
+    except Exception as e:
+        print(f"An error occurred: {e}")
 
 if __name__ == "__main__":
     main()
