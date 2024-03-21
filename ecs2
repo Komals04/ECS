@@ -27,6 +27,9 @@ def get_load_balancer_names(task_definition):
                 load_balancers.append(lb['containerName'])
     return load_balancers
 
+def get_cluster_name(cluster_arn):
+    return cluster_arn.split('/')[-1]
+
 def main():
     try:
         regions = ['us-east-1', 'us-east-2', 'us-west-2']
@@ -45,7 +48,7 @@ def main():
                 clusters = get_ecs_clusters()
 
                 for cluster_arn in clusters:
-                    cluster_name = cluster_arn.split('/')[-1]
+                    cluster_name = get_cluster_name(cluster_arn)
                     services = get_ecs_services(cluster_arn)
 
                     for service_arn in services:
