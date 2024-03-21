@@ -1,14 +1,8 @@
-C:\Users\ux186612\Documents>python ecs-tg.py
-Processing region us-east-1...
-Retrieving load balancers for ECS cluster did-cluster-ODC-METRICSSSSRDSECS-internal in region us-east-1...
-Found 0 load balancers for ECS cluster did-cluster-ODC-METRICSSSSRDSECS-internal
-Retrieving load balancers for ECS cluster dsk-cluster-DEPENDENCYSIMULATOR-EFUGXEM-internal-blue in region us-east-1...
-Found 1 load balancers for ECS cluster dsk-cluster-DEPENDENCYSIMULATOR-EFUGXEM-internal-blue
-Traceback (most recent call last):
-  File "C:\Users\ux186612\Documents\ecs-tg.py", line 103, in <module>
-    main()
-  File "C:\Users\ux186612\Documents\ecs-tg.py", line 90, in main
-    target_group_arns = [listener['DefaultActions'][0]['TargetGroupArn'] for listener in response['Listeners']]
-  File "C:\Users\ux186612\Documents\ecs-tg.py", line 90, in <listcomp>
-    target_group_arns = [listener['DefaultActions'][0]['TargetGroupArn'] for listener in response['Listeners']]
-KeyError: 'TargetGroupArn'
+aws cloudwatch get-metric-statistics \
+    --namespace AWS/ApplicationELB \
+    --metric-name TargetResponseTime \
+    --dimensions Name=LoadBalancer,Value=<load_balancer_arn> \
+    --start-time "$(date -u -d '3 hours ago' '+%Y-%m-%dT%H:%M:%S')" \
+    --end-time "$(date -u '+%Y-%m-%dT%H:%M:%S')" \
+    --period 3600 \
+    --statistics Average
