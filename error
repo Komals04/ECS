@@ -1,8 +1,54 @@
-aws cloudwatch get-metric-statistics \
-    --namespace AWS/ApplicationELB \
-    --metric-name TargetResponseTime \
-    --dimensions Name=LoadBalancer,Value=<load_balancer_arn> \
-    --start-time "$(date -u -d '3 hours ago' '+%Y-%m-%dT%H:%M:%S')" \
-    --end-time "$(date -u '+%Y-%m-%dT%H:%M:%S')" \
-    --period 3600 \
-    --statistics Average
+import boto3
+import csv
+from datetime import datetime, timedelta
+
+def get_target_response_time(load_balancer_arn, start_time, end_time):
+    cloudwatch_client = boto3.client('cloudwatch')
+    response = cloudwatch_client.get_metric_statistics(
+        Namespace='AWS/ApplicationELB',
+        MetricName='TargetResponseTime',
+        Dimensions=[
+            {'Name': 'LoadBalancer', 'Value': load_balancer_arn},
+        ],
+        StartTime=start_time,
+        EndTime=end_time,
+        Period=3600,  # 1 hour
+        Statistics=['Average']
+    )
+    datapoints = response.get('Datapoints', [])
+    if datapoints:
+        return datapoints[0]['Average']
+    else:
+        return 0
+
+def get_load_balancers(region):
+    elbv2_client = boto3.client('elbv2', region_name=region)
+    response = elbv2_client.describe_load_balancers()
+    load_balancers = response['LoadBalancers']
+    return [lb['LoadBalancerArn'] for lb in load_balancers]
+
+def write_to_csv(filename, data):
+    with open(filename, 'w', newline='') as csvfile:
+        writer = csv.writer(csvfile)
+        writer.writerow(['Load Balancer ARN', 'Target Response Time (seconds)'])
+        for lb_arn, response_time in data.items():
+            writer.writerow([lb_arn, response_time])
+
+def main():
+    regions = ['us-east-1', 'us-east-2', 'us-west-2']
+    start_time = datetime.utcnow() - timedelta(hours=3)
+    end_time = datetime.utcnow()
+
+    all_load_balancers = {}
+    for region in regions:
+        load_balancers = get_load_balancers(region)
+        for lb_arn in load_balancers:
+            response_time = get_target_response_time(lb_arn, start_time, end_time)
+            all_load_balancers[lb_arn] = response_time
+
+    filename = 'load_balancer_response_times.csv'
+    write_to_csv(filename, all_load_balancers)
+    print(f'Data saved to {filename}')
+
+if __name__ == "__main__":
+    main()
