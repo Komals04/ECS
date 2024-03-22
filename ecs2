@@ -1,68 +1,63 @@
 import boto3
-import csv
-from datetime import datetime
+from datetime import datetime, timedelta
 
-def get_ecs_clusters():
-    ecs_client = boto3.client('ecs')
-    clusters = ecs_client.list_clusters()['clusterArns']
-    return clusters
+# Initialize the CloudWatch client
+cloudwatch = boto3.client('cloudwatch', region_name='us-east-1')  # Initialize for the first region
 
-def get_ecs_services(cluster_arn):
-    ecs_client = boto3.client('ecs')
-    services = ecs_client.list_services(cluster=cluster_arn)['serviceArns']
-    return services
+# Define the regions
+regions = ['us-east-1', 'us-east-2', 'us-west-2']
 
-def get_task_definition(service_arn):
-    ecs_client = boto3.client('ecs')
-    service = ecs_client.describe_services(services=[service_arn])['services'][0]
-    task_definition_arn = service['taskDefinition']
-    task_definition = ecs_client.describe_task_definition(taskDefinition=task_definition_arn)
-    return task_definition
+# Iterate over regions
+for region in regions:
+    cloudwatch = boto3.client('cloudwatch', region_name=region)
 
-def get_load_balancer_names(task_definition):
-    load_balancers = []
-    for container_definition in task_definition['taskDefinition']['containerDefinitions']:
-        if 'loadBalancers' in container_definition:
-            for lb in container_definition['loadBalancers']:
-                load_balancers.append(lb['containerName'])
-    return load_balancers
+    # Get a list of ECS clusters in the region
+    ecs_client = boto3.client('ecs', region_name=region)
+    clusters_response = ecs_client.list_clusters()
+    cluster_arns = clusters_response.get('clusterArns', [])
 
-def get_cluster_name(cluster_arn):
-    return cluster_arn.split('/')[-1]
+    # Iterate over each cluster
+    for cluster_arn in cluster_arns:
+        cluster_name = cluster_arn.split('/')[-1]
 
-def main():
-    try:
-        regions = ['us-east-1', 'us-east-2', 'us-west-2']
+        # Define the parameters for the metric query
+        namespace = 'AWS/ECS'
+        metric_name = 'CPUUtilization'
+        start_time = datetime.utcnow() - timedelta(hours=1)  # Adjust this as needed
+        end_time = datetime.utcnow()
+        period = 300  # Period in seconds
 
-        timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
-        filename = f'ecs_load_balancers_{timestamp}.csv'
+        # Get the CPU utilization metrics
+        response = cloudwatch.get_metric_statistics(
+            Namespace=namespace,
+            MetricName=metric_name,
+            Dimensions=[{'Name': 'ClusterName', 'Value': cluster_name}],
+            StartTime=start_time,
+            EndTime=end_time,
+            Period=period,
+            Statistics=['Minimum', 'Maximum', 'Average'],
+            Unit='Percent'
+        )
 
-        fieldnames = ['Cluster Name', 'Service Name', 'Load Balancer Name']
+        # Extract the datapoints
+        datapoints = response['Datapoints']
 
-        with open(filename, 'w', newline='') as csvfile:
-            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-            writer.writeheader()
+        # Sort the datapoints by timestamp
+        datapoints.sort(key=lambda x: x['Timestamp'])
 
-            for region in regions:
-                boto3.setup_default_session(region_name=region)
-                clusters = get_ecs_clusters()
+        # Extract the minimum, maximum, and average values
+        min_cpu_utilization = None
+        max_cpu_utilization = None
+        avg_cpu_utilization = None
 
-                for cluster_arn in clusters:
-                    cluster_name = get_cluster_name(cluster_arn)
-                    services = get_ecs_services(cluster_arn)
+        if datapoints:
+            min_cpu_utilization = min(datapoints, key=lambda x: x['Minimum'])['Minimum']
+            max_cpu_utilization = max(datapoints, key=lambda x: x['Maximum'])['Maximum']
+            avg_cpu_utilization = sum([point['Average'] for point in datapoints]) / len(datapoints)
 
-                    for service_arn in services:
-                        service_name = service_arn.split('/')[-1]
-                        task_definition = get_task_definition(service_arn)
-                        load_balancer_names = get_load_balancer_names(task_definition)
-
-                        for lb_name in load_balancer_names:
-                            writer.writerow({'Cluster Name': cluster_name, 'Service Name': service_name, 'Load Balancer Name': lb_name})
-                            print(f"Exported load balancer {lb_name} for service {service_name} in cluster {cluster_name} in region {region}")
-
-        print(f'Completed exporting ECS load balancers to {filename}.')
-    except Exception as e:
-        print(f"An error occurred: {e}")
-
-if __name__ == "__main__":
-    main()
+        # Print the results
+        print(f"Cluster: {cluster_name} | Region: {region}")
+        print("Minimum CPU Utilization:", min_cpu_utilization)
+        print("Maximum CPU Utilization:", max_cpu_utilization)
+        print("Average CPU Utilization:", avg_cpu_utilization)
+        print("--------------------------------------")
