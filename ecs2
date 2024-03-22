@@ -1,63 +1,84 @@
 import boto3
 from datetime import datetime, timedelta
-
-# Initialize the CloudWatch client
-cloudwatch = boto3.client('cloudwatch', region_name='us-east-1')  # Initialize for the first region
+import csv
 
 # Define the regions
 regions = ['us-east-1', 'us-east-2', 'us-west-2']
 
-# Iterate over regions
-for region in regions:
-    cloudwatch = boto3.client('cloudwatch', region_name=region)
+# Open CSV file in write mode
+with open('ecs_cpu_utilization.csv', mode='w', newline='') as csvfile:
+    fieldnames = ['ClusterName', 'ServiceName', 'Region', 'Minimum_CPU_Utilization', 'Maximum_CPU_Utilization', 'Average_CPU_Utilization']
+    writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
 
-    # Get a list of ECS clusters in the region
-    ecs_client = boto3.client('ecs', region_name=region)
-    clusters_response = ecs_client.list_clusters()
-    cluster_arns = clusters_response.get('clusterArns', [])
+    # Write CSV header
+    writer.writeheader()
 
-    # Iterate over each cluster
-    for cluster_arn in cluster_arns:
-        cluster_name = cluster_arn.split('/')[-1]
+    # Iterate over regions
+    for region in regions:
+        # Initialize the CloudWatch client
+        cloudwatch = boto3.client('cloudwatch', region_name=region)
 
-        # Define the parameters for the metric query
-        namespace = 'AWS/ECS'
-        metric_name = 'CPUUtilization'
-        start_time = datetime.utcnow() - timedelta(hours=1)  # Adjust this as needed
-        end_time = datetime.utcnow()
-        period = 300  # Period in seconds
+        # Get a list of ECS clusters in the region
+        ecs_client = boto3.client('ecs', region_name=region)
+        clusters_response = ecs_client.list_clusters()
+        cluster_arns = clusters_response.get('clusterArns', [])
 
-        # Get the CPU utilization metrics
-        response = cloudwatch.get_metric_statistics(
-            Namespace=namespace,
-            MetricName=metric_name,
-            Dimensions=[{'Name': 'ClusterName', 'Value': cluster_name}],
-            StartTime=start_time,
-            EndTime=end_time,
-            Period=period,
-            Statistics=['Minimum', 'Maximum', 'Average'],
-            Unit='Percent'
-        )
+        # Iterate over each cluster
+        for cluster_arn in cluster_arns:
+            cluster_name = cluster_arn.split('/')[-1]
 
-        # Extract the datapoints
-        datapoints = response['Datapoints']
+            # Get a list of services in the cluster
+            services_response = ecs_client.list_services(cluster=cluster_name)
+            service_arns = services_response.get('serviceArns', [])
 
-        # Sort the datapoints by timestamp
-        datapoints.sort(key=lambda x: x['Timestamp'])
+            # Iterate over each service in the cluster
+            for service_arn in service_arns:
+                service_name = service_arn.split('/')[-1]
 
-        # Extract the minimum, maximum, and average values
-        min_cpu_utilization = None
-        max_cpu_utilization = None
-        avg_cpu_utilization = None
+                # Define the parameters for the metric query
+                namespace = 'AWS/ECS'
+                metric_name = 'CPUUtilization'
+                start_time = datetime.utcnow() - timedelta(hours=1)  # Adjust this as needed
+                end_time = datetime.utcnow()
+                period = 300  # Period in seconds
 
-        if datapoints:
-            min_cpu_utilization = min(datapoints, key=lambda x: x['Minimum'])['Minimum']
-            max_cpu_utilization = max(datapoints, key=lambda x: x['Maximum'])['Maximum']
-            avg_cpu_utilization = sum([point['Average'] for point in datapoints]) / len(datapoints)
+                # Get the CPU utilization metrics
+                response = cloudwatch.get_metric_statistics(
+                    Namespace=namespace,
+                    MetricName=metric_name,
+                    Dimensions=[
+                        {'Name': 'ClusterName', 'Value': cluster_name},
+                        {'Name': 'ServiceName', 'Value': service_name}
+                    ],
+                    StartTime=start_time,
+                    EndTime=end_time,
+                    Period=period,
+                    Statistics=['Minimum', 'Maximum', 'Average'],
+                    Unit='Percent'
+                )
 
-        # Print the results
-        print(f"Cluster: {cluster_name} | Region: {region}")
-        print("Minimum CPU Utilization:", min_cpu_utilization)
-        print("Maximum CPU Utilization:", max_cpu_utilization)
-        print("Average CPU Utilization:", avg_cpu_utilization)
-        print("--------------------------------------")
+                # Extract the datapoints
+                datapoints = response['Datapoints']
+
+                # Sort the datapoints by timestamp
+                datapoints.sort(key=lambda x: x['Timestamp'])
+
+                # Extract the minimum, maximum, and average values
+                min_cpu_utilization = None
+                max_cpu_utilization = None
+                avg_cpu_utilization = None
+
+                if datapoints:
+                    min_cpu_utilization = min(datapoints, key=lambda x: x['Minimum'])['Minimum']
+                    max_cpu_utilization = max(datapoints, key=lambda x: x['Maximum'])['Maximum']
+                    avg_cpu_utilization = sum([point['Average'] for point in datapoints]) / len(datapoints)
+
+                # Write the row to CSV file
+                writer.writerow({
+                    'ClusterName': cluster_name,
+                    'ServiceName': service_name,
+                    'Region': region,
+                    'Minimum_CPU_Utilization': min_cpu_utilization,
+                    'Maximum_CPU_Utilization': max_cpu_utilization,
+                    'Average_CPU_Utilization': avg_cpu_utilization
+                })
